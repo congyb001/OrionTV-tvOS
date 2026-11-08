@@ -8,6 +8,8 @@ import { PlayerControls } from "@/components/PlayerControls";
 import { EpisodeSelectionModal } from "@/components/EpisodeSelectionModal";
 import { SourceSelectionModal } from "@/components/SourceSelectionModal";
 import { SpeedSelectionModal } from "@/components/SpeedSelectionModal";
+import { SkipButtons } from "@/components/SkipButtons";
+import { PlaybackMarkersModal } from "@/components/PlaybackMarkersModal";
 import { SeekingBar } from "@/components/SeekingBar";
 // import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
@@ -223,6 +225,10 @@ export default function PlayScreen() {
         state.setShowSpeedModal(false);
         return true;
       }
+      if (state.showMarkersModal) {
+        state.setShowMarkersModal(false);
+        return true;
+      }
 
       // 退出前先落一次播放记录（续播位置才不会丢）
       try {
@@ -295,6 +301,9 @@ export default function PlayScreen() {
         />
       )}
 
+      {/* 跳过片头 / 上集回顾 / 片尾：常驻在右下角，不需要先调出控制条 */}
+      {deviceType === "tv" && !isExiting && <SkipButtons />}
+
       {/* 控件作为独立层渲染，每个按钮都独立可获得焦点 */}
       {showControls && deviceType === "tv" && (
         <PlayerControls showControls={showControls} setShowControls={setShowControls} />
@@ -311,6 +320,7 @@ export default function PlayScreen() {
       <EpisodeSelectionModal />
       <SourceSelectionModal />
       <SpeedSelectionModal />
+      <PlaybackMarkersModal />
     </ThemedView>
   );
 }

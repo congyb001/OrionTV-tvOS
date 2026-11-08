@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Pause, Play, Rewind, FastForward, Gauge, List, Tv, SkipForward } from "lucide-react-native";
+import { Pause, Play, Gauge, List, Tv, SkipForward, Scissors } from "lucide-react-native";
 import { MediaButton } from "@/components/MediaButton";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 
@@ -40,6 +40,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
     setShowEpisodeModal,
     setShowSourceModal,
     setShowSpeedModal,
+    setShowMarkersModal,
     seek,
   } = usePlayerStore();
 
@@ -100,10 +101,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
         </View>
 
         <View style={styles.buttonsRow}>
-          <MediaButton onPress={() => seek(-SEEK_STEP)} accessibilityLabel="快退10秒">
-            <Rewind color="white" size={26} />
-          </MediaButton>
-
           <MediaButton
             onPress={togglePlayPause}
             hasTVPreferredFocus={showControls}
@@ -111,10 +108,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
             accessibilityLabel="播放/暂停"
           >
             {status?.isLoaded && status.isPlaying ? <Pause color="white" size={32} /> : <Play color="white" size={32} />}
-          </MediaButton>
-
-          <MediaButton onPress={() => seek(SEEK_STEP)} accessibilityLabel="快进10秒">
-            <FastForward color="white" size={26} />
           </MediaButton>
 
           <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode} accessibilityLabel="下一集">
@@ -137,6 +130,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
           <MediaButton onPress={() => setShowSourceModal(true)} accessibilityLabel="切换源">
             <Tv color="white" size={24} />
+          </MediaButton>
+
+          <MediaButton onPress={() => setShowMarkersModal(true)} accessibilityLabel="设置片头片尾">
+            <Scissors color="white" size={24} />
           </MediaButton>
         </View>
       </LinearGradient>

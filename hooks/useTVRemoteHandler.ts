@@ -16,6 +16,10 @@ export const useTVRemoteHandler = () => {
   const { showControls, setShowControls, showEpisodeModal, togglePlayPause, seek } = usePlayerStore();
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
+  // 遥控事件去重：tvOS 同一次按键可能下发 down/up 两个事件，避免播放/暂停被切两次
+  const lastEventAt = useRef<Record<string, number>>({});
+  // 连续快进/快退的宽限期：刚用左右键跳过时，控制条虽已显示，左右键仍继续跳转
+  const lastSeekAt = useRef(0);
   const fastForwardIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // 重置或启动隐藏控件的定时器
@@ -65,6 +69,14 @@ export const useTVRemoteHandler = () => {
         return;
       }
 
+      const type: any = (event as any).eventType;
+      const now = Date.now();
+      const last = lastEventAt.current[type] || 0;
+      if (now - last < 250) {
+        return;
+      }
+      lastEventAt.current[type] = now;
+
       if (event.eventType === "longRight" || event.eventType === "longLeft") {
         if (event.eventKeyAction === 1) {
           if (fastForwardIntervalRef.current) {
@@ -77,18 +89,32 @@ export const useTVRemoteHandler = () => {
       resetTimer();
 
       if (showControls) {
-        // 如果控制条已显示，则不处理后台的快进/快退等操作
-        // 避免与控制条上的按钮焦点冲突
+        // 控制条已显示时，方向键主要用于在按钮之间移动。
+        // 例外：刚刚用左右键跳过（2 秒内），继续响应急速连按
+        if (
+          (event.eventType === "left" || event.eventType === "right") &&
+          Date.now() - lastSeekAt.current < 2000
+        ) {
+          lastSeekAt.current = Date.now();
+          seek(event.eventType === "left" ? -SEEK_STEP : SEEK_STEP);
+        }
         return;
       }
 
       switch (event.eventType) {
+        case "playPause":
+          // 遥控器上的独立播放/暂停键
+          togglePlayPause();
+          setShowControls(true);
+          break;
         case "select":
           togglePlayPause();
           setShowControls(true);
           break;
         case "left":
-          seek(-SEEK_STEP); // 快退15秒
+          setShowControls(true); // 左右键快进/快退时同时把控制条调出来
+          lastSeekAt.current = Date.now();
+          seek(-SEEK_STEP);
           break;
         case "longLeft":
           if (!fastForwardIntervalRef.current && event.eventKeyAction === 0) {
@@ -98,6 +124,8 @@ export const useTVRemoteHandler = () => {
           }
           break;
         case "right":
+          setShowControls(true);
+          lastSeekAt.current = Date.now();
           seek(SEEK_STEP);
           break;
         case "longRight":
@@ -109,6 +137,7 @@ export const useTVRemoteHandler = () => {
           }
           break;
         case "down":
+        case "up":
           setShowControls(true);
           break;
       }

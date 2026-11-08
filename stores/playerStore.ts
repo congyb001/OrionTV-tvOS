@@ -31,6 +31,8 @@ interface PlayerState {
   playbackRate: number;
   introEndTime?: number;
   outroStartTime?: number;
+  recapEndTime?: number;
+  showMarkersModal: boolean;
   setVideoRef: (ref: RefObject<Video>) => void;
   loadVideo: (options: {
     source: string;
@@ -52,6 +54,12 @@ interface PlayerState {
   setPlaybackRate: (rate: number) => void;
   setIntroEndTime: () => void;
   setOutroStartTime: () => void;
+  setRecapEndTime: () => void;
+  setMarkerAtCurrentPosition: (kind: "recap" | "intro" | "outro") => void;
+  clearMarker: (kind: "recap" | "intro" | "outro") => void;
+  setShowMarkersModal: (show: boolean) => void;
+  /** 跳到绝对位置（毫秒），先暂停再跳，避免边播边跳留下旧缓冲 */
+  skipTo: (positionMillis: number) => Promise<void>;
   reset: () => void;
   _seekTimeout?: NodeJS.Timeout;
   _isRecordSaveThrottled: boolean;
@@ -78,6 +86,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   playbackRate: 1.0,
   introEndTime: undefined,
   outroStartTime: undefined,
+  recapEndTime: undefined,
+  showMarkersModal: false,
   _seekTimeout: undefined,
   _isRecordSaveThrottled: false,
 
@@ -223,6 +233,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         episodes: mappedEpisodes,
         introEndTime: playRecord?.introEndTime || playerSettings?.introEndTime,
         outroStartTime: playRecord?.outroStartTime || playerSettings?.outroStartTime,
+        recapEndTime: playRecord?.recapEndTime || playerSettings?.recapEndTime,
       });
       
       const perfEnd = performance.now();
@@ -247,6 +258,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         progressPosition: 0,
         seekPosition: 0,
       });
+      // 换集必须从头播：有些 HLS 源换片后位置会延续上一集的时间轴，
+      // 这里显式把位置打回 0；如果此刻还没加载完，onLoad 里会再补一次。
+      try {
+        await videoRef?.current?.setPositionAsync(0);
+      } catch {
+        // 尚未加载完成时忽略，由 onLoad 兜底
+      }
       // 切集时不再用 replayAsync：源已随 index 变化，Video 会带着新源重新挂载并自动播放。
       // 旧实现里 replayAsync 会在新源加载时再起一个播放器，造成两个声音重叠。
       logger.info(`[PLAYER] Stock switched to episode index ${index}`);
@@ -373,6 +391,80 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
+  setRecapEndTime: () => {
+    get().setMarkerAtCurrentPosition("recap");
+  },
+
+  setShowMarkersModal: (show) => set({ showMarkersModal: show }),
+
+  setMarkerAtCurrentPosition: (kind) => {
+    const { status } = get();
+    if (!status?.isLoaded) return;
+
+    const position = Math.floor(status.positionMillis || 0);
+    const duration = status.durationMillis || 0;
+
+    const patch: any = {};
+    if (kind === "recap") {
+      patch.recapEndTime = position;
+    } else if (kind === "intro") {
+      patch.introEndTime = position;
+    } else {
+      if (!duration) return;
+      // 片尾标记存的是"距离结尾还有多久"，与旧逻辑保持一致
+      patch.outroStartTime = Math.max(1000, duration - position);
+    }
+
+    set(patch);
+    get()._savePlayRecord(patch, { immediate: true });
+    Toast.show({ type: "success", text1: "已记录当前位置" });
+  },
+
+  clearMarker: (kind) => {
+    const detail = useDetailStore.getState().detail;
+    const patch: any =
+      kind === "recap"
+        ? { recapEndTime: undefined }
+        : kind === "intro"
+          ? { introEndTime: undefined }
+          : { outroStartTime: undefined };
+
+    set(patch);
+    get()._savePlayRecord(patch, { immediate: true });
+    if (detail) {
+      PlayerSettingsManager.save(detail.source, detail.id.toString(), patch).catch(() => {});
+    }
+    Toast.show({ type: "info", text1: "已清除该标记" });
+  },
+
+  skipTo: async (positionMillis) => {
+    const { videoRef } = get();
+    const video = videoRef?.current;
+    if (!video) return;
+
+    let fresh: any = null;
+    try {
+      fresh = await video.getStatusAsync();
+    } catch {
+      return;
+    }
+    if (!fresh?.isLoaded) return;
+
+    const target = Math.max(0, Math.min(positionMillis, (fresh.durationMillis || positionMillis) - 500));
+    const wasPlaying = !!fresh.isPlaying;
+
+    try {
+      await video.pauseAsync?.();
+      await video.setPositionAsync(target);
+      await new Promise((r) => setTimeout(r, 200));
+      if (wasPlaying) await video.playAsync?.();
+    } catch (err) {
+      logger.debug("Failed to skip:", err);
+    }
+
+    set({ isSeeking: false, progressPosition: fresh.durationMillis ? target / fresh.durationMillis : 0 });
+  },
+
   _savePlayRecord: (updates = {}, options = {}) => {
     const { immediate = false } = options;
     if (!immediate) {
@@ -386,11 +478,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     const { detail } = useDetailStore.getState();
-    const { currentEpisodeIndex, episodes, status, introEndTime, outroStartTime } = get();
+    const { currentEpisodeIndex, episodes, status, introEndTime, outroStartTime, recapEndTime } = get();
     if (detail && status?.isLoaded) {
       const existingRecord = {
         introEndTime,
         outroStartTime,
+        recapEndTime,
       };
       PlayRecordManager.save(detail.source, detail.id.toString(), {
         title: detail.title,
@@ -418,17 +511,6 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const { currentEpisodeIndex, episodes, outroStartTime, playEpisode } = get();
     const detail = useDetailStore.getState().detail;
-
-    if (
-      outroStartTime &&
-      newStatus.durationMillis &&
-      newStatus.positionMillis >= newStatus.durationMillis - outroStartTime
-    ) {
-      if (currentEpisodeIndex < episodes.length - 1) {
-        playEpisode(currentEpisodeIndex + 1);
-        return; // Stop further processing for this update
-      }
-    }
 
     if (detail && newStatus.durationMillis) {
       get()._savePlayRecord();
@@ -490,6 +572,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       playbackRate: 1.0,
       introEndTime: undefined,
       outroStartTime: undefined,
+      recapEndTime: undefined,
+      showMarkersModal: false,
     });
   },
 

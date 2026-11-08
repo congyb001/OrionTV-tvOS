@@ -39,12 +39,11 @@ export const useVideoHandlers = ({
       // 0. 先把这一路暂停住，确保后面「定位 → 播放」不会和上一路残留的消息重叠
       await videoRef.current?.pauseAsync?.();
 
-      // 1. 再设置位置（如果需要）
-      const jumpPosition = initialPosition || introEndTime || 0;
-      if (jumpPosition > 0) {
-        console.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
-        await videoRef.current?.setPositionAsync(jumpPosition);
-      }
+      // 1. 定位到断点位置；换集时 initialPosition 为 0，这里也显式复位，
+      //    否则某些 HLS 源换片后会沿用上一集的时间轴，出现"切集不从片头开始"
+      const jumpPosition = initialPosition || 0;
+      console.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
+      await videoRef.current?.setPositionAsync(jumpPosition);
       
       // 2. 显式调用播放以确保自动播放
       console.info(`[AUTOPLAY] Attempting to start playback after onLoad`);

@@ -20,9 +20,10 @@ const formatTime = (milliseconds: number) => {
 };
 
 export const SeekingBar = () => {
-  const { isSeeking, seekPosition, status } = usePlayerStore();
+  const { isSeeking, seekPosition, status, showControls } = usePlayerStore();
 
-  if (!isSeeking || !status?.isLoaded) {
+  // 控制条自带进度条，这里只在控制条隐藏时才显示，避免出现两条进度条
+  if (!isSeeking || !status?.isLoaded || showControls) {
     return null;
   }
 

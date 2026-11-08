@@ -20,12 +20,14 @@ const STORAGE_KEYS = {
 export type PlayRecord = ApiPlayRecord & {
   introEndTime?: number;
   outroStartTime?: number;
+  recapEndTime?: number;
 };
 export type Favorite = ApiFavorite;
 
 export interface PlayerSettings {
   introEndTime?: number;
   outroStartTime?: number;
+  recapEndTime?: number;
   playbackRate?: number;
 }
 
@@ -78,7 +80,12 @@ export class PlayerSettingsManager {
     const allSettings = await this.getAll();
     const key = generateKey(source, id);
     // Only save if there are actual values to save
-    if (settings.introEndTime !== undefined || settings.outroStartTime !== undefined || settings.playbackRate !== undefined) {
+    if (
+      settings.introEndTime !== undefined ||
+      settings.outroStartTime !== undefined ||
+      settings.recapEndTime !== undefined ||
+      settings.playbackRate !== undefined
+    ) {
       allSettings[key] = { ...allSettings[key], ...settings };
     } else {
       // If all are undefined, remove the key
