@@ -8,6 +8,30 @@ import Logger from '@/utils/Logger';
 
 const logger = Logger.withTag('PlayerStore');
 
+/**
+ * 确保播放器处于播放状态。
+ * tvOS 的 HLS 在 pause → setPosition 之后，单次 playAsync 有时不生效（seek 尚未落地
+ * 或播放意图被覆盖），这里轮询几次确认，避免出现"跳完停在暂停帧"。
+ */
+async function ensurePlaying(video: any, attempts = 4): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const st: any = await video?.getStatusAsync?.();
+      if (st?.isLoaded && st.isPlaying) return true;
+      await video?.playAsync?.();
+    } catch (err) {
+      logger.debug("ensurePlaying attempt failed:", err);
+    }
+    await new Promise((r) => setTimeout(r, 180));
+  }
+  try {
+    const st: any = await video?.getStatusAsync?.();
+    return !!(st?.isLoaded && st.isPlaying);
+  } catch {
+    return false;
+  }
+}
+
 interface Episode {
   url: string;
   title: string;
@@ -32,6 +56,8 @@ interface PlayerState {
   introEndTime?: number;
   outroStartTime?: number;
   recapEndTime?: number;
+  /** 用户是否主动按了暂停（快进/跳过之后据此决定是否自动续播） */
+  userPaused: boolean;
   showMarkersModal: boolean;
   setVideoRef: (ref: RefObject<Video>) => void;
   loadVideo: (options: {
@@ -87,6 +113,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   introEndTime: undefined,
   outroStartTime: undefined,
   recapEndTime: undefined,
+  userPaused: false,
   showMarkersModal: false,
   _seekTimeout: undefined,
   _isRecordSaveThrottled: false,
@@ -260,8 +287,10 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       });
       // 换集必须从头播：有些 HLS 源换片后位置会延续上一集的时间轴，
       // 这里显式把位置打回 0；如果此刻还没加载完，onLoad 里会再补一次。
+      set({ userPaused: false });
       try {
         await videoRef?.current?.setPositionAsync(0);
+        await ensurePlaying(videoRef?.current as any);
       } catch {
         // 尚未加载完成时忽略，由 onLoad 兜底
       }
@@ -272,18 +301,24 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   togglePlayPause: async () => {
-    const { status, videoRef } = get();
-    if (status?.isLoaded) {
-      try {
-        if (status.isPlaying) {
-          await videoRef?.current?.pauseAsync();
-        } else {
-          await videoRef?.current?.playAsync();
-        }
-      } catch (error) {
-        logger.debug("Failed to toggle play/pause:", error);
-        Toast.show({ type: "error", text1: "操作失败" });
+    const video = get().videoRef?.current;
+    if (!video) return;
+
+    try {
+      // 用播放器的实时状态判断，store 里的 status 可能滞后一两个心跳
+      const fresh: any = await video.getStatusAsync();
+      if (!fresh?.isLoaded) return;
+
+      if (fresh.isPlaying) {
+        set({ userPaused: true });
+        await video.pauseAsync();
+      } else {
+        set({ userPaused: false });
+        await ensurePlaying(video);
       }
+    } catch (error) {
+      logger.debug("Failed to toggle play/pause:", error);
+      Toast.show({ type: "error", text1: "操作失败" });
     }
   },
 
@@ -303,7 +338,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const currentPos = Math.max(fresh.positionMillis || 0, 0);
     const target = Math.max(0, Math.min(currentPos + duration, fresh.durationMillis - 1000));
-    const wasPlaying = !!fresh.isPlaying;
+    // 是否自动续播以"用户有没有主动暂停"为准，不依赖某一帧的 isPlaying 快照
+    const shouldResume = !get().userPaused;
 
     const doSeek = async () => {
       // 关键：跳转前先暂停、落地后再恢复播放。
@@ -311,7 +347,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       await video.pauseAsync?.();
       await video.setPositionAsync(target);
       await new Promise((r) => setTimeout(r, 250));
-      if (wasPlaying) await video.playAsync?.();
+      // 跳完必须真的在播，否则会出现"快进后停在暂停画面，要按播放键才动"
+      if (shouldResume) await ensurePlaying(video);
     };
 
     try {
@@ -451,13 +488,14 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!fresh?.isLoaded) return;
 
     const target = Math.max(0, Math.min(positionMillis, (fresh.durationMillis || positionMillis) - 500));
-    const wasPlaying = !!fresh.isPlaying;
+    const shouldResume = !get().userPaused;
 
     try {
       await video.pauseAsync?.();
       await video.setPositionAsync(target);
       await new Promise((r) => setTimeout(r, 200));
-      if (wasPlaying) await video.playAsync?.();
+      // 跳过片头/回顾后要自动继续播，别停在那一帧
+      if (shouldResume) await ensurePlaying(video);
     } catch (err) {
       logger.debug("Failed to skip:", err);
     }
@@ -573,6 +611,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       introEndTime: undefined,
       outroStartTime: undefined,
       recapEndTime: undefined,
+      userPaused: false,
       showMarkersModal: false,
     });
   },

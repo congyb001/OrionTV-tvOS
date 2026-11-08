@@ -86,6 +86,14 @@ export const useTVRemoteHandler = () => {
         }
       }
 
+      // 遥控器独立的播放/暂停键：无论控制条是否显示都必须生效
+      if (event.eventType === "playPause") {
+        togglePlayPause();
+        setShowControls(true);
+        resetTimer();
+        return;
+      }
+
       resetTimer();
 
       if (showControls) {
@@ -102,11 +110,6 @@ export const useTVRemoteHandler = () => {
       }
 
       switch (event.eventType) {
-        case "playPause":
-          // 遥控器上的独立播放/暂停键
-          togglePlayPause();
-          setShowControls(true);
-          break;
         case "select":
           togglePlayPause();
           setShowControls(true);

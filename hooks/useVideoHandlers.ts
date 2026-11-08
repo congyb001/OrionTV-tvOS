@@ -45,9 +45,17 @@ export const useVideoHandlers = ({
       console.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
       await videoRef.current?.setPositionAsync(jumpPosition);
       
-      // 2. 显式调用播放以确保自动播放
+      // 2. 显式调用播放以确保自动播放（新片加载视为"用户想播放"）
       console.info(`[AUTOPLAY] Attempting to start playback after onLoad`);
+      usePlayerStore.setState({ userPaused: false });
       await videoRef.current?.playAsync();
+      // 再确认一次，tvOS 上首帧定位后偶发停在暂停态
+      for (let i = 0; i < 3; i++) {
+        const st: any = await videoRef.current?.getStatusAsync?.();
+        if (st?.isLoaded && st.isPlaying) break;
+        await videoRef.current?.playAsync?.();
+        await new Promise((r) => setTimeout(r, 180));
+      }
       console.info(`[AUTOPLAY] Auto-play successful after onLoad`);
       onReady?.();
       
