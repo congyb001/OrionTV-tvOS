@@ -10,7 +10,7 @@ import { SourceSelectionModal } from "@/components/SourceSelectionModal";
 import { SpeedSelectionModal } from "@/components/SpeedSelectionModal";
 import { SkipButtons } from "@/components/SkipButtons";
 import { PlaybackMarkersModal } from "@/components/PlaybackMarkersModal";
-import { SeekingBar } from "@/components/SeekingBar";
+import { SeekHud } from "@/components/SeekHud";
 // import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
@@ -309,7 +309,8 @@ export default function PlayScreen() {
         <PlayerControls showControls={showControls} setShowControls={setShowControls} />
       )}
 
-      <SeekingBar />
+      {/* 快进/快退提示：Infuse 风格，跳转时只在中间弹提示，不调出整条控制条 */}
+      {deviceType === "tv" && !isExiting && <SeekHud />}
 
       {currentEpisode?.url && isLoading && !isExiting && (
         <View style={dynamicStyles.loadingContainer}>

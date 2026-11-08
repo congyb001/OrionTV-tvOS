@@ -13,6 +13,8 @@ const logger = Logger.withTag('PlayerStore');
  * tvOS 的 HLS 在 pause → setPosition 之后，单次 playAsync 有时不生效（seek 尚未落地
  * 或播放意图被覆盖），这里轮询几次确认，避免出现"跳完停在暂停帧"。
  */
+let seekHudTimer: ReturnType<typeof setTimeout> | null = null;
+
 async function ensurePlaying(video: any, attempts = 4): Promise<boolean> {
   for (let i = 0; i < attempts; i++) {
     try {
@@ -58,6 +60,10 @@ interface PlayerState {
   recapEndTime?: number;
   /** 用户是否主动按了暂停（快进/跳过之后据此决定是否自动续播） */
   userPaused: boolean;
+  /** 快进/快退时的大号提示层（Infuse 风格） */
+  seekHudVisible: boolean;
+  seekHudDelta: number;
+  showSeekHud: (delta: number) => void;
   showMarkersModal: boolean;
   setVideoRef: (ref: RefObject<Video>) => void;
   loadVideo: (options: {
@@ -114,6 +120,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   outroStartTime: undefined,
   recapEndTime: undefined,
   userPaused: false,
+  seekHudVisible: false,
+  seekHudDelta: 0,
   showMarkersModal: false,
   _seekTimeout: undefined,
   _isRecordSaveThrottled: false,
@@ -367,6 +375,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isSeeking: true,
       seekPosition: target / fresh.durationMillis,
     });
+    get().showSeekHud(duration);
 
     if (get()._seekTimeout) {
       clearTimeout(get()._seekTimeout);
@@ -430,6 +439,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setRecapEndTime: () => {
     get().setMarkerAtCurrentPosition("recap");
+  },
+
+  showSeekHud: (delta) => {
+    if (seekHudTimer) clearTimeout(seekHudTimer);
+    set({ seekHudVisible: true, seekHudDelta: delta });
+    seekHudTimer = setTimeout(() => set({ seekHudVisible: false }), 1500);
   },
 
   setShowMarkersModal: (show) => set({ showMarkersModal: show }),
@@ -612,6 +627,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       outroStartTime: undefined,
       recapEndTime: undefined,
       userPaused: false,
+      seekHudVisible: false,
       showMarkersModal: false,
     });
   },

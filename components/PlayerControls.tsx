@@ -97,7 +97,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
             <View style={styles.progressBg} />
             <View style={[styles.progressFill, { width: `${Math.min(1, progress || 0) * 100}%` }]} />
           </Pressable>
-          <Text style={styles.timeText}>{formatTime(durationMillis)}</Text>
+          <Text style={styles.timeText}>-{formatTime(Math.max(0, durationMillis - positionMillis))}</Text>
         </View>
 
         <View style={styles.buttonsRow}>

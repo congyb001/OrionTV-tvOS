@@ -14,6 +14,10 @@ const CONTROLS_TIMEOUT = 5000;
  */
 export const useTVRemoteHandler = () => {
   const { showControls, setShowControls, showEpisodeModal, togglePlayPause, seek } = usePlayerStore();
+  // Infuse 行为：暂停时控制条常驻，播放时才自动隐藏
+  const isPlaying = usePlayerStore((state: any) =>
+    state.status?.isLoaded ? !!state.status.isPlaying : false
+  );
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
   // 遥控事件去重：tvOS 同一次按键可能下发 down/up 两个事件，避免播放/暂停被切两次
@@ -34,12 +38,11 @@ export const useTVRemoteHandler = () => {
     }, CONTROLS_TIMEOUT);
   }, [setShowControls]);
 
-  // 当控件显示时，启动定时器
+  // 当控件显示且正在播放时才启动自动隐藏；暂停状态下控件常驻
   useEffect(() => {
-    if (showControls) {
+    if (showControls && isPlaying) {
       resetTimer();
     } else {
-      // 如果控件被隐藏，清除定时器
       if (controlsTimer.current) {
         clearTimeout(controlsTimer.current);
       }
@@ -51,7 +54,7 @@ export const useTVRemoteHandler = () => {
         clearTimeout(controlsTimer.current);
       }
     };
-  }, [showControls, resetTimer]);
+  }, [showControls, isPlaying, resetTimer]);
 
   // 组件卸载时清除快进定时器
   useEffect(() => {
@@ -86,19 +89,17 @@ export const useTVRemoteHandler = () => {
         }
       }
 
-      // 遥控器独立的播放/暂停键：无论控制条是否显示都必须生效
+      // 播放/暂停键：任何时候直接切换播放状态，不弹控制条（Infuse 行为）
       if (event.eventType === "playPause") {
         togglePlayPause();
-        setShowControls(true);
-        resetTimer();
         return;
       }
 
       resetTimer();
 
       if (showControls) {
-        // 控制条已显示时，方向键主要用于在按钮之间移动。
-        // 例外：刚刚用左右键跳过（2 秒内），继续响应急速连按
+        // 控制条已显示：方向键交给焦点引擎在按钮之间移动。
+        // 例外：刚用左右键跳过（2 秒内）继续响应连按
         if (
           (event.eventType === "left" || event.eventType === "right") &&
           Date.now() - lastSeekAt.current < 2000
@@ -111,11 +112,11 @@ export const useTVRemoteHandler = () => {
 
       switch (event.eventType) {
         case "select":
-          togglePlayPause();
+          // 单击画面：只呼出控制条，不切换播放（Infuse 行为）
           setShowControls(true);
           break;
         case "left":
-          setShowControls(true); // 左右键快进/快退时同时把控制条调出来
+          // 左右键：只跳转 + 屏幕中间出快进提示，不调出整条控制条
           lastSeekAt.current = Date.now();
           seek(-SEEK_STEP);
           break;
@@ -127,7 +128,6 @@ export const useTVRemoteHandler = () => {
           }
           break;
         case "right":
-          setShowControls(true);
           lastSeekAt.current = Date.now();
           seek(SEEK_STEP);
           break;
