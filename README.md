@@ -2,7 +2,8 @@
 
 这是 [orion-lib/OrionTV](https://github.com/orion-lib/OrionTV) 的 Apple TV（tvOS）适配分支，改动集中在 tvOS 运行与播放体验。
 
-- **可直接安装的包**：`release/OrionTV_1.3.14_SinglePlayer.ipa`（未签名，需自行签名后安装，方法见 `release/安装与配置说明.md`）
+- **下载安装包**：[Releases · v1.3.14](https://github.com/congyb001/OrionTV-tvOS/releases/latest)（`OrionTV_1.3.14_SinglePlayer.ipa`，未签名，需自行签名后安装，步骤见同页附件的《安装与配置说明.md》）
+- 仓库内也保留一份：`release/OrionTV_1.3.14_SinglePlayer.ipa`
 - **tvOS 关键改动**：
   - Xcode 27 / tvOS 27 SDK 适配（部署目标 `TVOS_DEPLOYMENT_TARGET = 15.0`，`NODE_BINARY` 指向绝对路径）
   - 设置页崩溃修复（`useTVEventHandler` 在非 TV 平台退化为 noop、`setNativeProps` 加类型判断）
