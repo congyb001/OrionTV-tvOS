@@ -1,3 +1,20 @@
+# OrionTV · tvOS 版
+
+这是 [orion-lib/OrionTV](https://github.com/orion-lib/OrionTV) 的 Apple TV（tvOS）适配分支，改动集中在 tvOS 运行与播放体验。
+
+- **可直接安装的包**：`release/OrionTV_1.3.14_SinglePlayer.ipa`（未签名，需自行签名后安装，方法见 `release/安装与配置说明.md`）
+- **tvOS 关键改动**：
+  - Xcode 27 / tvOS 27 SDK 适配（部署目标 `TVOS_DEPLOYMENT_TARGET = 15.0`，`NODE_BINARY` 指向绝对路径）
+  - 设置页崩溃修复（`useTVEventHandler` 在非 TV 平台退化为 noop、`setNativeProps` 加类型判断）
+  - 首页改为选项卡电视墙（`ScrollView` 手工分行布局，按屏宽算列宽，避免虚拟列表锁焦点）
+  - 播放页：单播放器守卫、断点续播「先定位后播放」、快进「先暂停再跳转」、返回键一次退出
+  - 遥控焦点：按钮 `Pressable onPress` 与全局 select 事件共用去重时间戳，避免一次按键触发两遍（曾导致 push 出两个播放页、两路声音重叠）
+  - 后端兼容 LunaTV / LibreTV 双契约（探测 `/api/server-config` 与 `/api/status`）
+
+构建：`./rebuild.sh`（出真机 ipa）或 `./rebuild.sh sim`（只出模拟器版）。
+
+---
+
 # OrionTV 📺
 
 一个基于 React Native TVOS 和 Expo 构建的播放器，旨在提供流畅的视频观看体验。
