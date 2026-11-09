@@ -55,13 +55,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
     seekPosition,
     progressPosition,
     playbackRate,
-    togglePlayPause,
     seek,
     activePanel,
     setActivePanel,
     sleepRemainingMs,
   } = usePlayerStore();
 
+  const [barFocused, setBarFocused] = React.useState(false);
   const { detail } = useDetailStore();
   const { deviceType } = useResponsiveLayout();
 
@@ -70,7 +70,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
   const positionMillis = statusAny?.positionMillis || 0;
   const durationMillis = statusAny?.durationMillis || 0;
   const remaining = Math.max(0, durationMillis - positionMillis);
-  const isPlaying = !!statusAny?.isPlaying;
+
 
   const hasEpisodes = episodes.length > 0;
   const epLabel = hasEpisodes ? `第 ${currentEpisodeIndex + 1} 期` : "影片";
@@ -99,9 +99,23 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
         {/* 进度条：左已播 / 右剩余 */}
         <View style={styles.progressRow}>
           <Text style={styles.timeText}>{formatTime(positionMillis)}</Text>
-          <Pressable style={styles.progressTrack} onPress={onProgressPress}>
-            <View style={styles.progressBg} />
-            <View style={[styles.progressFill, { width: `${Math.min(1, progress || 0) * 100}%` }]} />
+          <Pressable
+            focusable
+            hasTVPreferredFocus={showControls}
+            onFocus={() => setBarFocused(true)}
+            onBlur={() => setBarFocused(false)}
+            style={[styles.progressTrack, barFocused && styles.progressTrackFocused]}
+            onPress={onProgressPress}
+            accessibilityLabel="播放进度"
+          >
+            <View style={[styles.progressBg, barFocused && styles.progressBgFocused]} />
+            <View
+              style={[
+                styles.progressFill,
+                barFocused && styles.progressFillFocused,
+                { width: `${Math.min(1, progress || 0) * 100}%` },
+              ]}
+            />
           </Pressable>
           <Text style={[styles.timeText, styles.remainingText]}>-{formatTime(remaining)}</Text>
         </View>
@@ -126,15 +140,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
           </View>
 
           <View style={styles.iconGroup}>
-            <MediaButton
-              onPress={togglePlayPause}
-              hasTVPreferredFocus={showControls}
-              style={styles.playButton}
-              accessibilityLabel="播放/暂停"
-            >
-              {isPlaying ? <Pause color="white" size={26} /> : <Play color="white" size={26} />}
-            </MediaButton>
-
             <MediaButton
               onPress={() => togglePanel("info")}
               style={[styles.iconCircle, activePanel === "info" && styles.iconCircleActive]}
@@ -251,10 +256,22 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.28)",
   },
+  progressBgFocused: {
+    height: 6,
+    backgroundColor: "rgba(255,255,255,0.45)",
+  },
   progressFill: {
     height: 3,
     borderRadius: 2,
     backgroundColor: "#39D98A",
+  },
+  progressFillFocused: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#4BEBA0",
+  },
+  progressTrackFocused: {
+    transform: [{ scaleY: 1.6 }],
   },
   actionRow: {
     marginTop: 24,

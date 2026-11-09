@@ -11,7 +11,6 @@ import { SpeedSelectionModal } from "@/components/SpeedSelectionModal";
 import { SkipButtons } from "@/components/SkipButtons";
 import { PlaybackMarkersModal } from "@/components/PlaybackMarkersModal";
 import { PlayerPanels } from "@/components/PlayerPanels";
-import { SeekHud } from "@/components/SeekHud";
 // import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
@@ -334,9 +333,6 @@ export default function PlayScreen() {
       {showControls && deviceType === "tv" && (
         <PlayerControls showControls={showControls} setShowControls={setShowControls} />
       )}
-
-      {/* 快进/快退提示：Infuse 风格，跳转时只在中间弹提示，不调出整条控制条 */}
-      {deviceType === "tv" && !isExiting && <SeekHud />}
 
       {/* 4:3 覆盖层：设置里打开后，用黑边把画面裁成 4:3 */}
       {deviceType === "tv" && cover43 && <AspectMask />}

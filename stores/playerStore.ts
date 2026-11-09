@@ -408,7 +408,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isSeeking: true,
       seekPosition: target / fresh.durationMillis,
     });
-    get().showSeekHud(duration);
+
 
     if (get()._seekTimeout) {
       clearTimeout(get()._seekTimeout);

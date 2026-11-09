@@ -106,12 +106,9 @@ export const useTVRemoteHandler = () => {
       resetTimer();
 
       if (showControls) {
-        // 控制条已显示：方向键交给焦点引擎在按钮之间移动。
-        // 例外：刚用左右键跳过（2 秒内）继续响应连按
-        if (
-          (event.eventType === "left" || event.eventType === "right") &&
-          Date.now() - lastSeekAt.current < 2000
-        ) {
+        // 控制条已显示：焦点默认在进度条上。
+        // 左右键在进度条上直接跳转（连续按可连续跳），上下键交给焦点引擎走到标签和图标。
+        if (event.eventType === "left" || event.eventType === "right") {
           lastSeekAt.current = Date.now();
           seek(event.eventType === "left" ? -SEEK_STEP : SEEK_STEP);
         }
@@ -124,7 +121,8 @@ export const useTVRemoteHandler = () => {
           setShowControls(true);
           break;
         case "left":
-          // 左右键：只跳转 + 屏幕中间出快进提示，不调出整条控制条
+          // 左右键：呼出控制条（焦点落在进度条上）并快退
+          setShowControls(true);
           lastSeekAt.current = Date.now();
           seek(-SEEK_STEP);
           break;
@@ -136,6 +134,8 @@ export const useTVRemoteHandler = () => {
           }
           break;
         case "right":
+          // 左右键：呼出控制条（焦点落在进度条上）并快进
+          setShowControls(true);
           lastSeekAt.current = Date.now();
           seek(SEEK_STEP);
           break;
