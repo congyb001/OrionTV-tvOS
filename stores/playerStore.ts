@@ -48,6 +48,12 @@ interface PlayerState {
   status: AVPlaybackStatus | null;
   isLoading: boolean;
   showControls: boolean;
+  /** 进度条当前是否持有焦点 */
+  progressBarFocused: boolean;
+  /** 递增即请求把焦点挪回进度条（进度条用 key 重新挂载以抢占 preferred focus） */
+  progressFocusEpoch: number;
+  setProgressBarFocused: (focused: boolean) => void;
+  requestProgressFocus: () => void;
   showEpisodeModal: boolean;
   showSourceModal: boolean;
   showSpeedModal: boolean;
@@ -132,6 +138,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   status: null,
   isLoading: true,
   showControls: false,
+  progressBarFocused: false,
+  progressFocusEpoch: 0,
+  setProgressBarFocused: (focused: boolean) => set({ progressBarFocused: focused }),
+  requestProgressFocus: () =>
+    set((state) => ({ progressFocusEpoch: state.progressFocusEpoch + 1, progressBarFocused: false })),
   showEpisodeModal: false,
   showSourceModal: false,
   showSpeedModal: false,

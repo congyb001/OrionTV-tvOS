@@ -59,6 +59,8 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
     activePanel,
     setActivePanel,
     sleepRemainingMs,
+    progressFocusEpoch,
+    setProgressBarFocused,
   } = usePlayerStore();
 
   const [barFocused, setBarFocused] = React.useState(false);
@@ -100,10 +102,17 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
         <View style={styles.progressRow}>
           <Text style={styles.timeText}>{formatTime(positionMillis)}</Text>
           <Pressable
+            key={`progress-${progressFocusEpoch}`}
             focusable
             hasTVPreferredFocus={showControls}
-            onFocus={() => setBarFocused(true)}
-            onBlur={() => setBarFocused(false)}
+            onFocus={() => {
+              setBarFocused(true);
+              setProgressBarFocused(true);
+            }}
+            onBlur={() => {
+              setBarFocused(false);
+              setProgressBarFocused(false);
+            }}
             style={[styles.progressTrack, barFocused && styles.progressTrackFocused]}
             onPress={onProgressPress}
             accessibilityLabel="播放进度"

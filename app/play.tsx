@@ -249,8 +249,13 @@ export default function PlayScreen() {
         state.setActivePanel(null);
         return true;
       }
-      // 控制条还在（没自动隐藏）：先按返回收起控制条，不退出播放页
       if (state.showControls) {
+        // 焦点不在进度条上：第一次返回只把焦点挪回进度条
+        if (!state.progressBarFocused) {
+          state.requestProgressFocus();
+          return true;
+        }
+        // 焦点已经在进度条上：第二次返回收起控制条
         state.setShowControls(false);
         return true;
       }
