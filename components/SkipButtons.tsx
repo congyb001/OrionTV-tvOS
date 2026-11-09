@@ -20,6 +20,7 @@ export const SkipButtons: React.FC = () => {
     outroStartTime,
     skipTo,
     playEpisode,
+    skipIntroHint,
   } = usePlayerStore();
 
   const loaded: any = status?.isLoaded ? (status as any) : null;
@@ -34,9 +35,9 @@ export const SkipButtons: React.FC = () => {
   const introEnd = introEndTime || (isSeries ? DEFAULT_INTRO_END_MS : 0);
   const outroWindow = outroStartTime || (isSeries ? DEFAULT_OUTRO_WINDOW_MS : 0);
 
-  const showRecap = recapEnd > 0 && position < recapEnd - 1000;
-  const showIntro = introEnd > recapEnd && position >= recapEnd && position < introEnd - 1000;
-  const showOutro = outroWindow > 0 && duration - position <= outroWindow && duration - position > 1000;
+  const showRecap = skipIntroHint && recapEnd > 0 && position < recapEnd - 1000;
+  const showIntro = skipIntroHint && introEnd > recapEnd && position >= recapEnd && position < introEnd - 1000;
+  const showOutro = skipIntroHint && outroWindow > 0 && duration - position <= outroWindow && duration - position > 1000;
 
   const hasNext = currentEpisodeIndex < episodes.length - 1;
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, memo, useMemo, useState } from "react";
-import { StyleSheet, Pressable, BackHandler, AppState, AppStateStatus, View } from "react-native";
+import { StyleSheet, Pressable, BackHandler, AppState, AppStateStatus, View, useWindowDimensions } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Video } from "expo-av";
 import { useKeepAwake } from "expo-keep-awake";
@@ -10,6 +10,7 @@ import { SourceSelectionModal } from "@/components/SourceSelectionModal";
 import { SpeedSelectionModal } from "@/components/SpeedSelectionModal";
 import { SkipButtons } from "@/components/SkipButtons";
 import { PlaybackMarkersModal } from "@/components/PlaybackMarkersModal";
+import { PlayerPanels } from "@/components/PlayerPanels";
 import { SeekHud } from "@/components/SeekHud";
 // import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
@@ -25,6 +26,21 @@ import Logger from '@/utils/Logger';
 const logger = Logger.withTag('PlayScreen');
 
 // 优化的加载动画组件
+/** 4:3 覆盖层：在画面上下各盖一条黑边，把可视区裁成 4:3 */
+const AspectMask: React.FC = () => {
+  const { width, height } = useWindowDimensions();
+  const targetHeight = Math.min(height, (width * 3) / 4);
+  const barHeight = Math.max(0, (height - targetHeight) / 2);
+  if (barHeight <= 0) return null;
+  return (
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      <View style={{ height: barHeight, backgroundColor: "black" }} />
+      <View style={{ flex: 1 }} />
+      <View style={{ height: barHeight, backgroundColor: "black" }} />
+    </View>
+  );
+};
+
 const LoadingContainer = memo(
   ({ style, currentEpisode }: { style: any; currentEpisode: { url: string; title: string } | undefined }) => {
     logger.info(
@@ -118,6 +134,7 @@ export default function PlayScreen() {
     // setShowNextEpisodeOverlay,
     reset,
     loadVideo,
+    cover43,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
 
@@ -229,6 +246,10 @@ export default function PlayScreen() {
         state.setShowMarkersModal(false);
         return true;
       }
+      if (state.activePanel) {
+        state.setActivePanel(null);
+        return true;
+      }
 
       // 退出前先落一次播放记录（续播位置才不会丢）
       try {
@@ -312,6 +333,9 @@ export default function PlayScreen() {
       {/* 快进/快退提示：Infuse 风格，跳转时只在中间弹提示，不调出整条控制条 */}
       {deviceType === "tv" && !isExiting && <SeekHud />}
 
+      {/* 4:3 覆盖层：设置里打开后，用黑边把画面裁成 4:3 */}
+      {deviceType === "tv" && cover43 && <AspectMask />}
+
       {currentEpisode?.url && isLoading && !isExiting && (
         <View style={dynamicStyles.loadingContainer}>
           <VideoLoadingAnimation showProgressBar />
@@ -322,6 +346,7 @@ export default function PlayScreen() {
       <SourceSelectionModal />
       <SpeedSelectionModal />
       <PlaybackMarkersModal />
+      <PlayerPanels />
     </ThemedView>
   );
 }

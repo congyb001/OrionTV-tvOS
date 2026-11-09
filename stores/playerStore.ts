@@ -14,6 +14,8 @@ const logger = Logger.withTag('PlayerStore');
  * 或播放意图被覆盖），这里轮询几次确认，避免出现"跳完停在暂停帧"。
  */
 let seekHudTimer: ReturnType<typeof setTimeout> | null = null;
+let sleepTimer: ReturnType<typeof setTimeout> | null = null;
+let sleepCountdownTimer: ReturnType<typeof setInterval> | null = null;
 
 async function ensurePlaying(video: any, attempts = 4): Promise<boolean> {
   for (let i = 0; i < attempts; i++) {
@@ -64,6 +66,29 @@ interface PlayerState {
   seekHudVisible: boolean;
   seekHudDelta: number;
   showSeekHud: (delta: number) => void;
+  /** 右侧面板：信息 / 设置 / 睡眠 / 音频 / 音乐 */
+  activePanel: "info" | "settings" | "sleep" | "audio" | "music" | null;
+  /** 连续播放：本集播完自动下一集 */
+  autoPlayNext: boolean;
+  /** 4:3 覆盖层：强制以 4:3 比例显示 */
+  cover43: boolean;
+  /** 自动跳过片头（识别到片头区间时自动跳） */
+  autoSkipIntro: boolean;
+  /** 跳过片头提示：是否显示跳过按钮 */
+  skipIntroHint: boolean;
+  /** 睡眠倒计时剩余毫秒（null 表示未开启） */
+  sleepRemainingMs: number | null;
+  /** 睡眠定时：播完本片后暂停 */
+  sleepUntilEnd: boolean;
+  setActivePanel: (panel: "info" | "settings" | "sleep" | "audio" | "music" | null) => void;
+  /** 已经自动跳过片头的集索引，避免反复跳 */
+  _autoSkippedAt?: number;
+  setAutoPlayNext: (v: boolean) => void;
+  setCover43: (v: boolean) => void;
+  setAutoSkipIntro: (v: boolean) => void;
+  setSkipIntroHint: (v: boolean) => void;
+  startSleepTimer: (minutes: number | "end") => void;
+  resetSleepTimer: () => void;
   showMarkersModal: boolean;
   setVideoRef: (ref: RefObject<Video>) => void;
   loadVideo: (options: {
@@ -122,6 +147,14 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   userPaused: false,
   seekHudVisible: false,
   seekHudDelta: 0,
+  activePanel: null,
+  autoPlayNext: true,
+  cover43: false,
+  autoSkipIntro: false,
+  skipIntroHint: true,
+  sleepRemainingMs: null,
+  sleepUntilEnd: false,
+  _autoSkippedAt: undefined,
   showMarkersModal: false,
   _seekTimeout: undefined,
   _isRecordSaveThrottled: false,
@@ -295,7 +328,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       });
       // 换集必须从头播：有些 HLS 源换片后位置会延续上一集的时间轴，
       // 这里显式把位置打回 0；如果此刻还没加载完，onLoad 里会再补一次。
-      set({ userPaused: false });
+      set({ userPaused: false, _autoSkippedAt: undefined });
       try {
         await videoRef?.current?.setPositionAsync(0);
         await ensurePlaying(videoRef?.current as any);
@@ -441,6 +474,66 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     get().setMarkerAtCurrentPosition("recap");
   },
 
+  setActivePanel: (panel) => set({ activePanel: panel }),
+  setAutoPlayNext: (v) => set({ autoPlayNext: v }),
+  setCover43: (v) => set({ cover43: v }),
+  setAutoSkipIntro: (v) => set({ autoSkipIntro: v }),
+  setSkipIntroHint: (v) => set({ skipIntroHint: v }),
+
+  startSleepTimer: (minutes) => {
+    if (sleepTimer) {
+      clearTimeout(sleepTimer);
+      sleepTimer = null;
+    }
+    if (sleepCountdownTimer) {
+      clearInterval(sleepCountdownTimer);
+      sleepCountdownTimer = null;
+    }
+
+    if (minutes === "end") {
+      set({ sleepUntilEnd: true, sleepRemainingMs: null });
+      Toast.show({ type: "info", text1: "睡眠定时", text2: "本片播放结束后暂停" });
+      return;
+    }
+
+    const totalMs = minutes * 60 * 1000;
+    const deadline = Date.now() + totalMs;
+    set({ sleepUntilEnd: false, sleepRemainingMs: totalMs });
+
+    sleepCountdownTimer = setInterval(() => {
+      const left = deadline - Date.now();
+      if (left <= 0) return;
+      set({ sleepRemainingMs: left });
+    }, 1000) as any;
+
+    sleepTimer = setTimeout(async () => {
+      try {
+        await get().videoRef?.current?.pauseAsync();
+        set({ userPaused: true });
+      } catch {}
+      if (sleepCountdownTimer) {
+        clearInterval(sleepCountdownTimer);
+        sleepCountdownTimer = null;
+      }
+      set({ sleepRemainingMs: null, sleepUntilEnd: false });
+      Toast.show({ type: "info", text1: "睡眠定时", text2: `${minutes} 分钟已到，已暂停播放` });
+    }, totalMs) as any;
+
+    Toast.show({ type: "success", text1: "睡眠定时", text2: `${minutes} 分钟后暂停` });
+  },
+
+  resetSleepTimer: () => {
+    if (sleepTimer) {
+      clearTimeout(sleepTimer);
+      sleepTimer = null;
+    }
+    if (sleepCountdownTimer) {
+      clearInterval(sleepCountdownTimer);
+      sleepCountdownTimer = null;
+    }
+    set({ sleepRemainingMs: null, sleepUntilEnd: false });
+  },
+
   showSeekHud: (delta) => {
     if (seekHudTimer) clearTimeout(seekHudTimer);
     set({ seekHudVisible: true, seekHudDelta: delta });
@@ -565,6 +658,20 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     const { currentEpisodeIndex, episodes, outroStartTime, playEpisode } = get();
     const detail = useDetailStore.getState().detail;
 
+    // 自动跳过片头：进入片头区间后一次性跳到片头结束
+    if (get().autoSkipIntro && newStatus.durationMillis) {
+      const isSeries = episodes.length > 1;
+      const introEnd = get().introEndTime || (isSeries ? 85_000 : 0);
+      if (
+        introEnd > 0 &&
+        newStatus.positionMillis < introEnd - 2000 &&
+        get()._autoSkippedAt === undefined
+      ) {
+        set({ _autoSkippedAt: currentEpisodeIndex } as any);
+        get().skipTo(introEnd);
+      }
+    }
+
     if (detail && newStatus.durationMillis) {
       get()._savePlayRecord();
 
@@ -577,7 +684,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     if (newStatus.didJustFinish) {
-      if (currentEpisodeIndex < episodes.length - 1) {
+      // 睡眠定时"播完本片结束"：停在结尾，不再续播
+      if (get().sleepUntilEnd) {
+        set({ sleepUntilEnd: false, sleepRemainingMs: null });
+        get().resetSleepTimer();
+        Toast.show({ type: "info", text1: "睡眠定时", text2: "本片已播完，已停止播放" });
+      } else if (get().autoPlayNext && currentEpisodeIndex < episodes.length - 1) {
+        // 连续播放开关打开时才自动下一集
         playEpisode(currentEpisodeIndex + 1);
       }
     }

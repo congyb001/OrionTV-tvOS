@@ -1,20 +1,18 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Pause, Play, Gauge, List, Tv, SkipForward, Scissors } from "lucide-react-native";
+import { Pause, Play, Gauge, Info, Settings, Moon, Volume2 } from "lucide-react-native";
 import { MediaButton } from "@/components/MediaButton";
+import { StyledButton } from "@/components/StyledButton";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 
 import usePlayerStore from "@/stores/playerStore";
 import useDetailStore from "@/stores/detailStore";
-import { useSources } from "@/stores/sourceStore";
 
 interface PlayerControlsProps {
   showControls: boolean;
   setShowControls: (show: boolean) => void;
 }
-
-const SEEK_STEP = 10 * 1000; // 快进/快退 10 秒
 
 const formatTime = (milliseconds: number) => {
   if (!milliseconds || milliseconds < 0) return "00:00";
@@ -26,7 +24,19 @@ const formatTime = (milliseconds: number) => {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 };
 
-export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls }) => {
+const formatRemaining = (ms: number | null) => {
+  if (!ms || ms <= 0) return undefined;
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  return m > 0 ? `${m}m` : `${total}s`;
+};
+
+/**
+ * 播放页控制条，布局对齐芒果 TV：
+ * 左下「第 N 期 + 剧名」→ 进度条（已播 / 剩余）→ 左侧「简介 / 音乐」标签，
+ * 右侧一排圆形图标：播放暂停、简介信息、设置、睡眠定时、速度、音频。
+ */
+export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) => {
   const {
     currentEpisodeIndex,
     episodes,
@@ -36,105 +46,113 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
     progressPosition,
     playbackRate,
     togglePlayPause,
-    playEpisode,
-    setShowEpisodeModal,
-    setShowSourceModal,
-    setShowSpeedModal,
-    setShowMarkersModal,
     seek,
+    activePanel,
+    setActivePanel,
+    sleepRemainingMs,
   } = usePlayerStore();
 
   const { detail } = useDetailStore();
-  const resources = useSources();
   const { deviceType } = useResponsiveLayout();
-
-  const videoTitle = detail?.title || "";
-  const currentEpisode = episodes[currentEpisodeIndex];
-  const currentEpisodeTitle = currentEpisode?.title;
-  const currentSource = resources.find((r) => r.source === detail?.source);
-  const currentSourceName = currentSource?.source_name;
-  const hasNextEpisode = currentEpisodeIndex < (episodes.length || 0) - 1;
-
-  const onPlayNextEpisode = () => {
-    if (hasNextEpisode) {
-      playEpisode(currentEpisodeIndex + 1);
-    }
-  };
 
   const progress = isSeeking ? seekPosition : progressPosition;
   const statusAny = status as any;
   const positionMillis = statusAny?.positionMillis || 0;
   const durationMillis = statusAny?.durationMillis || 0;
+  const remaining = Math.max(0, durationMillis - positionMillis);
+  const isPlaying = !!statusAny?.isPlaying;
 
-  // 触摸/鼠标拖动的进度条（TV 上主要由遥控器控制）
+  const hasEpisodes = episodes.length > 0;
+  const epLabel = hasEpisodes ? `第 ${currentEpisodeIndex + 1} 期` : "影片";
+
   const onProgressPress = (event: any) => {
     if (deviceType === "tv" || !durationMillis) return;
     const { nativeEvent } = event;
-    const ratio = Math.max(0, Math.min(1, nativeEvent.locationX / nativeEvent.target?.clientWidth || 0));
+    const ratio = Math.max(0, Math.min(1, nativeEvent.locationX / (nativeEvent.target?.clientWidth || 1)));
     seek(ratio * durationMillis - positionMillis);
   };
 
+  const togglePanel = (panel: "info" | "settings" | "sleep" | "audio" | "music") =>
+    setActivePanel(activePanel === panel ? null : panel);
+
   return (
     <View style={styles.container} pointerEvents="box-none">
-      {/* 顶部：片名 + 集数，Emby 风格左对齐小字 */}
-      <LinearGradient colors={["rgba(0,0,0,0.78)", "rgba(0,0,0,0)"]} style={styles.topBar}>
-        <Text style={styles.title} numberOfLines={1}>
-          {videoTitle}
-          {currentEpisodeTitle ? `  ·  ${currentEpisodeTitle}` : ""}
-        </Text>
-        {currentSourceName ? (
-          <Text style={styles.subtitle} numberOfLines={1}>
-            {currentSourceName}
+      <LinearGradient colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.88)"]} style={styles.bottomBar}>
+        {/* 期数 + 剧名 */}
+        <View style={styles.titleBlock}>
+          <Text style={styles.epLabel}>{epLabel}</Text>
+          <Text style={styles.title} numberOfLines={1}>
+            {detail?.title || ""}
           </Text>
-        ) : null}
-      </LinearGradient>
+        </View>
 
-      {/* 底部：进度 + 按钮组 */}
-      <LinearGradient colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.92)"]} style={styles.bottomBar}>
+        {/* 进度条：左已播 / 右剩余 */}
         <View style={styles.progressRow}>
           <Text style={styles.timeText}>{formatTime(positionMillis)}</Text>
           <Pressable style={styles.progressTrack} onPress={onProgressPress}>
             <View style={styles.progressBg} />
             <View style={[styles.progressFill, { width: `${Math.min(1, progress || 0) * 100}%` }]} />
           </Pressable>
-          <Text style={styles.timeText}>-{formatTime(Math.max(0, durationMillis - positionMillis))}</Text>
+          <Text style={[styles.timeText, styles.remainingText]}>-{formatTime(remaining)}</Text>
         </View>
 
-        <View style={styles.buttonsRow}>
-          <MediaButton
-            onPress={togglePlayPause}
-            hasTVPreferredFocus={showControls}
-            style={styles.playButton}
-            accessibilityLabel="播放/暂停"
-          >
-            {status?.isLoaded && status.isPlaying ? <Pause color="white" size={32} /> : <Play color="white" size={32} />}
-          </MediaButton>
+        {/* 左侧标签 + 右侧圆形图标组 */}
+        <View style={styles.actionRow}>
+          <View style={styles.tabs}>
+            <StyledButton
+              text="简介"
+              onPress={() => togglePanel("info")}
+              isSelected={activePanel === "info"}
+              style={styles.tabPill}
+              textStyle={styles.tabText}
+            />
+            <StyledButton
+              text="音乐"
+              onPress={() => togglePanel("music")}
+              isSelected={activePanel === "music"}
+              style={styles.tabPill}
+              textStyle={styles.tabText}
+            />
+          </View>
 
-          <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode} accessibilityLabel="下一集">
-            <SkipForward color={hasNextEpisode ? "white" : "#5A5A5A"} size={26} />
-          </MediaButton>
+          <View style={styles.iconGroup}>
+            <MediaButton
+              onPress={togglePlayPause}
+              hasTVPreferredFocus={showControls}
+              style={styles.playButton}
+              accessibilityLabel="播放/暂停"
+            >
+              {isPlaying ? <Pause color="white" size={30} /> : <Play color="white" size={30} />}
+            </MediaButton>
 
-          <View style={styles.divider} />
+            <MediaButton onPress={() => togglePanel("info")} accessibilityLabel="简介信息">
+              <Info color="white" size={22} />
+            </MediaButton>
 
-          <MediaButton onPress={() => setShowEpisodeModal(true)} accessibilityLabel="选集">
-            <List color="white" size={24} />
-          </MediaButton>
+            <MediaButton onPress={() => togglePanel("settings")} accessibilityLabel="播放设置">
+              <Settings color="white" size={22} />
+            </MediaButton>
 
-          <MediaButton
-            onPress={() => setShowSpeedModal(true)}
-            timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}
-            accessibilityLabel="倍速"
-          >
-            <Gauge color="white" size={24} />
-          </MediaButton>
+            <MediaButton
+              onPress={() => togglePanel("sleep")}
+              accessibilityLabel="睡眠定时"
+              timeLabel={formatRemaining(sleepRemainingMs)}
+            >
+              <Moon color={sleepRemainingMs ? "#FFD479" : "white"} size={22} />
+            </MediaButton>
 
-          <MediaButton onPress={() => setShowSourceModal(true)} accessibilityLabel="切换源">
-            <Tv color="white" size={24} />
-          </MediaButton>
+            <MediaButton
+              onPress={() => togglePanel("audio")}
+              accessibilityLabel="播放速度与音频"
+              timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}
+            >
+              <Gauge color="white" size={22} />
+            </MediaButton>
 
-          <MediaButton onPress={() => setShowMarkersModal(true)} accessibilityLabel="设置片头片尾">
-            <Scissors color="white" size={24} />
-          </MediaButton>
+            <MediaButton onPress={() => togglePanel("audio")} accessibilityLabel="音频">
+              <Volume2 color="white" size={22} />
+            </MediaButton>
+          </View>
         </View>
       </LinearGradient>
     </View>
@@ -144,39 +162,40 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: "space-between",
-  },
-  topBar: {
-    paddingHorizontal: 56,
-    paddingTop: 40,
-    paddingBottom: 60,
-  },
-  title: {
-    color: "#FFFFFF",
-    fontSize: 32,
-    fontWeight: "600",
-  },
-  subtitle: {
-    color: "rgba(255,255,255,0.65)",
-    fontSize: 17,
-    marginTop: 6,
+    justifyContent: "flex-end",
   },
   bottomBar: {
     paddingHorizontal: 56,
-    paddingBottom: 44,
-    paddingTop: 60,
+    paddingBottom: 40,
+    paddingTop: 90,
+  },
+  titleBlock: {
+    marginBottom: 18,
+  },
+  epLabel: {
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 17,
+    marginBottom: 4,
+  },
+  title: {
+    color: "#FFFFFF",
+    fontSize: 36,
+    fontWeight: "700",
   },
   progressRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 14,
   },
   timeText: {
     color: "rgba(255,255,255,0.85)",
     fontSize: 16,
     fontVariant: ["tabular-nums"],
-    minWidth: 68,
-    textAlign: "center",
+    minWidth: 64,
+  },
+  remainingText: {
+    textAlign: "right",
+    minWidth: 88,
   },
   progressTrack: {
     flex: 1,
@@ -187,32 +206,44 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    height: 4,
+    height: 3,
     borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.28)",
   },
   progressFill: {
-    height: 4,
+    height: 3,
     borderRadius: 2,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#39D98A",
   },
-  buttonsRow: {
+  actionRow: {
+    marginTop: 20,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
+  },
+  tabs: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  tabPill: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    minWidth: 96,
+  },
+  tabText: {
+    fontSize: 17,
+    fontWeight: "600",
+  },
+  iconGroup: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
-    marginTop: 28,
   },
   playButton: {
-    backgroundColor: "rgba(255,255,255,0.14)",
-    borderRadius: 999,
-    minWidth: 76,
-    marginHorizontal: 6,
-  },
-  divider: {
-    width: 1,
-    height: 26,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    marginHorizontal: 10,
+    minWidth: 64,
+    padding: 14,
+    borderRadius: 32,
   },
 });

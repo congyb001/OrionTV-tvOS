@@ -72,6 +72,14 @@ export const useTVRemoteHandler = () => {
         return;
       }
 
+      // 右侧面板（简介/设置/睡眠/音频/音乐）打开时，按键交给面板里的按钮
+      if (usePlayerStore.getState().activePanel) {
+        if (event.eventType === "playPause") {
+          togglePlayPause();
+        }
+        return;
+      }
+
       const type: any = (event as any).eventType;
       const now = Date.now();
       const last = lastEventAt.current[type] || 0;
