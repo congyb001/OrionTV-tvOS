@@ -67,7 +67,7 @@ interface PlayerState {
   seekHudDelta: number;
   showSeekHud: (delta: number) => void;
   /** 右侧面板：信息 / 设置 / 睡眠 / 音频 / 音乐 */
-  activePanel: "info" | "settings" | "sleep" | "audio" | "music" | null;
+  activePanel: "info" | "settings" | "sleep" | "audio" | "music" | "cast" | null;
   /** 连续播放：本集播完自动下一集 */
   autoPlayNext: boolean;
   /** 4:3 覆盖层：强制以 4:3 比例显示 */
@@ -80,7 +80,7 @@ interface PlayerState {
   sleepRemainingMs: number | null;
   /** 睡眠定时：播完本片后暂停 */
   sleepUntilEnd: boolean;
-  setActivePanel: (panel: "info" | "settings" | "sleep" | "audio" | "music" | null) => void;
+  setActivePanel: (panel: "info" | "settings" | "sleep" | "audio" | "music" | "cast" | null) => void;
   /** 已经自动跳过片头的集索引，避免反复跳 */
   _autoSkippedAt?: number;
   setAutoPlayNext: (v: boolean) => void;

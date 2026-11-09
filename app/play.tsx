@@ -250,6 +250,11 @@ export default function PlayScreen() {
         state.setActivePanel(null);
         return true;
       }
+      // 控制条还在（没自动隐藏）：先按返回收起控制条，不退出播放页
+      if (state.showControls) {
+        state.setShowControls(false);
+        return true;
+      }
 
       // 退出前先落一次播放记录（续播位置才不会丢）
       try {

@@ -15,6 +15,13 @@ const fmtDuration = (ms?: number) => {
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
+const formatQuality = (resolution?: any) => {
+  if (resolution === "4K") return "4K";
+  if (resolution === "1080P") return "1080P";
+  if (resolution === "720P") return "720P";
+  return "自动";
+};
+
 const Row: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <View style={styles.row}>{children}</View>
 );
@@ -278,6 +285,24 @@ export const PlayerPanels: React.FC = () => {
             <Row>
               <RowLabel label="音量" hint="tvOS 音量由系统控制，App 内不能调节" />
               <Text style={styles.valueText}>系统音量</Text>
+            </Row>
+          </ScrollView>
+        );
+
+      case "cast":
+        return (
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+            <Text style={styles.panelTitle}>投屏</Text>
+            <View style={styles.divider} />
+            <Text style={styles.rowLabel}>投到其它设备</Text>
+            <Text style={styles.rowHint}>
+              tvOS 上你是直接在大屏播放，不需要再投屏；如果想把手机上的内容推到这块 Apple TV，
+              需要在 iOS 端使用 AirPlay。本版本的投屏入口仅作说明，未接入协议。
+            </Text>
+            <View style={styles.divider} />
+            <Row>
+              <RowLabel label="视频清晰度" hint="由片源决定，自动选择首个可用线路" />
+              <Text style={styles.valueText}>{formatQuality((episodes[currentEpisodeIndex] as any)?.resolution)}</Text>
             </Row>
           </ScrollView>
         );

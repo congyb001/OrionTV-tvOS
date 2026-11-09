@@ -1,7 +1,17 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Pause, Play, Gauge, Info, Settings, Moon, Volume2 } from "lucide-react-native";
+import {
+  Pause,
+  Play,
+  Gauge,
+  Info,
+  Settings,
+  Moon,
+  Volume2,
+  AudioLines,
+  PictureInPicture2,
+} from "lucide-react-native";
 import { MediaButton } from "@/components/MediaButton";
 import { StyledButton } from "@/components/StyledButton";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -72,7 +82,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
     seek(ratio * durationMillis - positionMillis);
   };
 
-  const togglePanel = (panel: "info" | "settings" | "sleep" | "audio" | "music") =>
+  const togglePanel = (panel: "info" | "settings" | "sleep" | "audio" | "music" | "cast") =>
     setActivePanel(activePanel === panel ? null : panel);
 
   return (
@@ -122,35 +132,65 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
               style={styles.playButton}
               accessibilityLabel="播放/暂停"
             >
-              {isPlaying ? <Pause color="white" size={30} /> : <Play color="white" size={30} />}
+              {isPlaying ? <Pause color="white" size={26} /> : <Play color="white" size={26} />}
             </MediaButton>
 
-            <MediaButton onPress={() => togglePanel("info")} accessibilityLabel="简介信息">
-              <Info color="white" size={22} />
+            <MediaButton
+              onPress={() => togglePanel("info")}
+              style={[styles.iconCircle, activePanel === "info" && styles.iconCircleActive]}
+              accessibilityLabel="简介信息"
+            >
+              <Info color="white" size={21} />
             </MediaButton>
 
-            <MediaButton onPress={() => togglePanel("settings")} accessibilityLabel="播放设置">
-              <Settings color="white" size={22} />
+            <MediaButton
+              onPress={() => togglePanel("settings")}
+              style={[styles.iconCircle, activePanel === "settings" && styles.iconCircleActive]}
+              accessibilityLabel="播放设置"
+            >
+              <Settings color="white" size={21} />
             </MediaButton>
 
             <MediaButton
               onPress={() => togglePanel("sleep")}
+              style={[styles.iconCircle, activePanel === "sleep" && styles.iconCircleActive]}
               accessibilityLabel="睡眠定时"
               timeLabel={formatRemaining(sleepRemainingMs)}
             >
-              <Moon color={sleepRemainingMs ? "#FFD479" : "white"} size={22} />
+              <Moon color={sleepRemainingMs ? "#FFD479" : "white"} size={21} />
             </MediaButton>
 
             <MediaButton
               onPress={() => togglePanel("audio")}
-              accessibilityLabel="播放速度与音频"
+              style={[styles.iconCircle, activePanel === "audio" && styles.iconCircleActive]}
+              accessibilityLabel="播放速度"
               timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}
             >
-              <Gauge color="white" size={22} />
+              <Gauge color="white" size={21} />
             </MediaButton>
 
-            <MediaButton onPress={() => togglePanel("audio")} accessibilityLabel="音频">
-              <Volume2 color="white" size={22} />
+            <MediaButton
+              onPress={() => togglePanel("audio")}
+              style={[styles.iconCircle, activePanel === "audio" && styles.iconCircleActive]}
+              accessibilityLabel="音量"
+            >
+              <Volume2 color="white" size={21} />
+            </MediaButton>
+
+            <MediaButton
+              onPress={() => togglePanel("audio")}
+              style={[styles.iconCircle, activePanel === "audio" && styles.iconCircleActive]}
+              accessibilityLabel="音轨"
+            >
+              <AudioLines color="white" size={21} />
+            </MediaButton>
+
+            <MediaButton
+              onPress={() => togglePanel("cast")}
+              style={[styles.iconCircle, activePanel === "cast" && styles.iconCircleActive]}
+              accessibilityLabel="投屏"
+            >
+              <PictureInPicture2 color="white" size={21} />
             </MediaButton>
           </View>
         </View>
@@ -173,13 +213,14 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   epLabel: {
-    color: "rgba(255,255,255,0.72)",
-    fontSize: 17,
-    marginBottom: 4,
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 6,
   },
   title: {
     color: "#FFFFFF",
-    fontSize: 36,
+    fontSize: 40,
     fontWeight: "700",
   },
   progressRow: {
@@ -216,7 +257,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#39D98A",
   },
   actionRow: {
-    marginTop: 20,
+    marginTop: 24,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -239,11 +280,29 @@ const styles = StyleSheet.create({
   iconGroup: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 12,
   },
   playButton: {
-    minWidth: 64,
-    padding: 14,
-    borderRadius: 32,
+    width: 60,
+    height: 60,
+    minWidth: 60,
+    padding: 0,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    minWidth: 56,
+    padding: 0,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  iconCircleActive: {
+    backgroundColor: "rgba(255,255,255,0.38)",
   },
 });
