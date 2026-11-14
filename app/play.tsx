@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, BackHandler, View, ActivityIndicator, Pressable, Text } from "react-native";
+import { StyleSheet, BackHandler, View, ActivityIndicator, Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
-import NativeAVPlayerView from "@/modules/av-player-view";
+import { addPlayerListener, dismissPlayer, presentPlayer } from "@/modules/av-player-view";
 import useDetailStore from "@/stores/detailStore";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
 import { stopActivePlayback } from "@/utils/playbackGuard";
@@ -11,9 +11,9 @@ import Logger from "@/utils/Logger";
 const logger = Logger.withTag("PlayScreen");
 
 /**
- * 播放页：只渲染原生 AVPlayerViewController。
- * 界面、传输条、进度、快进快退、播放暂停全部交给 tvOS 原生播放器，
- * RN 侧只负责取片源地址、回传进度（用于「接着上次看」）。
+ * 播放页：以全屏模态呈现原生 AVPlayerViewController（只有全屏形态才带完整传输条按钮）。
+ * 界面、进度条、快进快退、播放暂停全部由 tvOS 原生播放器提供；
+ * RN 侧只负责取片源地址、回传进度、原生播放器关闭后回到详情页。
  */
 export default function PlayScreen() {
   useKeepAwake();
@@ -43,21 +43,18 @@ export default function PlayScreen() {
 
   const { initialPosition, loadVideo, reset, handlePlaybackStatusUpdate } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
-  const episodes = usePlayerStore((s) => s.episodes);
-  const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
-  const playEpisode = usePlayerStore((s) => s.playEpisode);
-  const [isReady, setIsReady] = useState(false);
-  const [btnFocused, setBtnFocused] = useState(false);
+  const [hasPresented, setHasPresented] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>("正在解析片源…");
+  const leavingRef = React.useRef(false);
 
-  const hasNextEpisode =
-    currentEpisodeIndex >= 0 && episodes.length > 1 && currentEpisodeIndex < episodes.length - 1;
-
-  // 载入片源：沿用原来的 loadVideo，拿到集数、当前集地址和续播位置
+  // 载入片源
   useEffect(() => {
     stopActivePlayback().catch(() => {});
     if (source && id && title) {
       loadVideo({ source, id, episodeIndex, position, title }).catch((e: any) => {
-        logger.error(`loadVideo failed: ${e?.message || e}`);
+        const msg = e?.message || String(e);
+        logger.error(`loadVideo failed: ${msg}`);
+        setStatusText(`片源解析失败：${msg}`);
       });
     }
   }, [episodeIndex, source, position, loadVideo, id, title]);
@@ -68,79 +65,105 @@ export default function PlayScreen() {
     };
   }, [reset]);
 
-  // 进度回传：把原生播放器的位置写回 store，供「接着上次看」和播放记录使用
-  const onProgress = (event: any) => {
-    const payload = event?.nativeEvent || {};
-    const positionMillis = payload.positionMillis ?? 0;
-    const durationMillis = payload.durationMillis ?? 0;
-    if (!durationMillis) return;
-    handlePlaybackStatusUpdate({
-      isLoaded: true,
-      positionMillis,
-      durationMillis,
-      isPlaying: !!payload.isPlaying,
-      didJustFinish: false,
-      isBuffering: false,
-      playbackRate: 1.0,
-      shouldPlay: !!payload.isPlaying,
-    } as any);
-    if (!isReady) setIsReady(true);
-  };
-
-  // 返回：记录播放位置后退出到详情页
+  // 片源就绪后，全屏呈现原生播放器
   useEffect(() => {
-    let lastBackAt = 0;
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      const now = Date.now();
-      if (now - lastBackAt < 400) return true;
-      lastBackAt = now;
+    const url = currentEpisode?.url;
+    if (!url || hasPresented) return;
+    setHasPresented(true);
+    setStatusText("正在启动播放器…");
+    // 等路由转场稳定再 present，避免在控制器切换过程中弹原生播放器
+    const timer = setTimeout(() => presentPlayer(url, initialPosition || 0), 300);
+    // initialPosition 只在首次呈现时用一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => clearTimeout(timer);
+  }, [currentEpisode?.url, hasPresented]);
 
+  // 进度回传 → store（续播与播放记录）
+  useEffect(() => {
+    const sub = addPlayerListener("onProgress", (payload: any) => {
+      const positionMillis = payload?.positionMillis ?? 0;
+      const durationMillis = payload?.durationMillis ?? 0;
+      if (!durationMillis) return;
+      setStatusText(null);
+      handlePlaybackStatusUpdate({
+        isLoaded: true,
+        positionMillis,
+        durationMillis,
+        isPlaying: !!payload?.isPlaying,
+        didJustFinish: false,
+        isBuffering: false,
+        playbackRate: 1.0,
+        shouldPlay: !!payload?.isPlaying,
+      } as any);
+    });
+    return () => sub.remove();
+  }, [handlePlaybackStatusUpdate]);
+
+  // 原生侧报错（片源无效 / 播放失败 / 无法呈现）
+  useEffect(() => {
+    const sub = addPlayerListener("onError", (payload: any) => {
+      setStatusText(`播放器启动失败：${payload?.message || "未知原因"}`);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // 片源迟迟不到：给出可读提示，避免一直无声转圈
+  useEffect(() => {
+    if (currentEpisode?.url) return;
+    const timer = setTimeout(() => {
+      setStatusText("片源地址为空：后台解析较慢或该资源没有可播放地址");
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [currentEpisode?.url]);
+
+  // 原生播放器被系统关闭（遥控 Menu 退出）→ 记录位置并回详情页
+  useEffect(() => {
+    const leave = () => {
+      if (leavingRef.current) return;
+      leavingRef.current = true;
       try {
         usePlayerStore.getState()._savePlayRecord(undefined, { immediate: true });
       } catch {
-        // 记录失败不影响退出
+        // 忽略
       }
       stopActivePlayback().catch(() => {});
       router.back();
-      return true;
-    });
-    return () => subscription.remove();
+    };
+
+    const sub = addPlayerListener("onDismiss", leave);
+    return () => sub.remove();
   }, [router]);
 
-  if (!currentEpisode?.url) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator color="#ffffff" size="large" />
-      </View>
-    );
-  }
+  // RN 侧返回兜底
+  useEffect(() => {
+    let lastBackAt = 0;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      const now = Date.now();
+      if (now - lastBackAt < 400) return true;
+      lastBackAt = now;
+      dismissPlayer();
+      try {
+        usePlayerStore.getState()._savePlayRecord(undefined, { immediate: true });
+      } catch {
+        // 忽略
+      }
+      router.back();
+      return true;
+    });
+    return () => sub.remove();
+  }, [router]);
+
+  // 页面卸载时确保原生播放器被关掉
+  useEffect(() => {
+    return () => {
+      dismissPlayer();
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
-      <NativeAVPlayerView
-        style={StyleSheet.absoluteFill}
-        url={currentEpisode.url}
-        initialPositionMs={initialPosition || 0}
-        autoPlay
-        onProgress={onProgress}
-      />
-      {hasNextEpisode && (
-        <View style={styles.overlay} pointerEvents="box-none">
-          <Pressable
-            hasTVPreferredFocus
-            onFocus={() => setBtnFocused(true)}
-            onBlur={() => setBtnFocused(false)}
-            onPress={() => {
-              playEpisode(currentEpisodeIndex + 1);
-            }}
-            style={[styles.nextButton, btnFocused && styles.nextButtonFocused]}
-          >
-            <Text style={[styles.nextButtonText, btnFocused && styles.nextButtonTextFocused]}>
-              播放下一集
-            </Text>
-          </Pressable>
-        </View>
-      )}
+      <ActivityIndicator color="#ffffff" size="large" />
+      {statusText ? <Text style={styles.status}>{statusText}</Text> : null}
     </View>
   );
 }
@@ -149,32 +172,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "black",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "flex-end",
-    alignItems: "flex-end",
-    padding: 60,
-  },
-  nextButton: {
+  status: {
+    marginTop: 24,
+    color: "#cccccc",
+    fontSize: 24,
+    textAlign: "center",
     paddingHorizontal: 40,
-    paddingVertical: 20,
-    borderRadius: 12,
-    backgroundColor: "rgba(0, 0, 0, 0.55)",
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.35)",
-  },
-  nextButtonFocused: {
-    backgroundColor: "rgba(255, 255, 255, 0.92)",
-    borderColor: "#ffffff",
-    transform: [{ scale: 1.08 }],
-  },
-  nextButtonText: {
-    color: "#ffffff",
-    fontSize: 28,
-    fontWeight: "600",
-  },
-  nextButtonTextFocused: {
-    color: "#111111",
   },
 });

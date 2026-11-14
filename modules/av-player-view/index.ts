@@ -1,9 +1,26 @@
-import { requireNativeViewManager } from "expo-modules-core";
+import { requireNativeModule } from "expo-modules-core";
 
-/**
- * 原生 AVPlayerViewController 视图。
- * 播放界面完全由 tvOS 原生播放器提供，RN 侧只传 url / 起始位置。
- */
-const NativeAVPlayerView = requireNativeViewManager("AVPlayerView");
+const NativeAVPlayer = requireNativeModule("AVPlayerView");
 
-export default NativeAVPlayerView;
+type ProgressPayload = {
+  positionMillis: number;
+  durationMillis: number;
+  isPlaying: boolean;
+};
+
+/** 以全屏模态呈现原生 AVPlayerViewController */
+export const presentPlayer = (url: string, positionMs: number = 0): void => {
+  NativeAVPlayer.present(url, positionMs);
+};
+
+/** 关闭原生播放器（不触发 onDismiss） */
+export const dismissPlayer = (): void => {
+  NativeAVPlayer.dismiss();
+};
+
+export const addPlayerListener = (
+  event: "onProgress" | "onStateChange" | "onDismiss" | "onError",
+  listener: (payload: any) => void
+) => NativeAVPlayer.addListener(event, listener);
+
+export type { ProgressPayload };
