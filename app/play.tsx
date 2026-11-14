@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { StyleSheet, BackHandler, View, ActivityIndicator, Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
-import { addPlayerListener, dismissPlayer, getLog, ping, presentPlayer } from "@/modules/av-player-view";
+import { addPlayerListener, dismissPlayer, getLog, presentPlayer } from "@/modules/av-player-view";
 import useDetailStore from "@/stores/detailStore";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
 import { stopActivePlayback } from "@/utils/playbackGuard";
@@ -43,7 +43,7 @@ export default function PlayScreen() {
 
   const { initialPosition, loadVideo, reset, handlePlaybackStatusUpdate } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
-  const [hasPresented, setHasPresented] = useState(false);
+  const presentedRef = React.useRef(false);
   const [statusText, setStatusText] = useState<string | null>("正在解析片源…");
   const leavingRef = React.useRef(false);
 
@@ -66,17 +66,13 @@ export default function PlayScreen() {
   }, [reset]);
 
   // 片源就绪后，全屏呈现原生播放器
+  // 注意：这里用 ref 做「只呈现一次」的闸门，不能把一次性状态放进依赖，
+  // 否则 setState 会让整个 effect 重跑并清掉待执行的定时器，导致 present 永远不执行。
   useEffect(() => {
     const url = currentEpisode?.url;
-    if (!url || hasPresented) return;
-    setHasPresented(true);
-    setStatusText(`模块探针：${(() => {
-      try {
-        return ping();
-      } catch (e: any) {
-        return `失败 ${e?.message || e}`;
-      }
-    })()}`);
+    if (!url || presentedRef.current) return;
+    presentedRef.current = true;
+    setStatusText("正在启动播放器…");
     // 等路由转场稳定再 present，避免在控制器切换过程中弹原生播放器
     const timer = setTimeout(() => {
       try {
@@ -85,10 +81,8 @@ export default function PlayScreen() {
         setStatusText(`调用原生播放器失败：${e?.message || String(e)}`);
       }
     }, 300);
-    // initialPosition 只在首次呈现时用一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => clearTimeout(timer);
-  }, [currentEpisode?.url, hasPresented]);
+  }, [currentEpisode?.url, initialPosition]);
 
   // 进度回传 → store（续播与播放记录）
   useEffect(() => {
