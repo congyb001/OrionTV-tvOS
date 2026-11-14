@@ -263,11 +263,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
       } else if (err.message.includes("404")) {
         errorMessage = "服务器API路径不正确，请检查服务器配置";
       } else if (err.message.includes("500")) {
-        // 带上出错的接口路径，方便直接定位是哪个请求 5xx
-        const detail = /status: (\d{3}) (\S+)/.exec(err.message);
-        errorMessage = detail
-          ? `服务器内部错误（${detail[1]} ${detail[2]}）`
-          : "服务器内部错误，请联系管理员";
+        errorMessage = "服务器内部错误，请联系管理员";
       } else if (err.message.includes("403")) {
         errorMessage = "访问被拒绝，请检查权限设置";
       }

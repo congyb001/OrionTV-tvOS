@@ -2,8 +2,8 @@ import ExpoModulesCore
 import AVKit
 
 /// 全屏呈现的原生播放器控制器。
-/// 全屏 + 模态，才是 AVPlayerViewController 拿完整传输条（播放/暂停、快进快退、字幕、音轨）的形态；
-/// 判断方式：控制器被关闭后回调 onDismiss，让 JS 侧回到详情页。
+/// 全屏 + 模态，才是 AVPlayerViewController 拿完整传输条（播放/暂停、快进快退、字幕、音轨）的形态。
+/// 关闭后回调 onDismiss，让 JS 侧回到详情页。
 final class OrionPlayerViewController: AVPlayerViewController {
   var onDismiss: (() -> Void)?
   private var alreadyReported = false
@@ -16,10 +16,6 @@ final class OrionPlayerViewController: AVPlayerViewController {
       onDismiss?()
     }
   }
-
-  deinit {
-    onDismiss = nil
-  }
 }
 
 public class AVPlayerViewModule: Module {
@@ -27,6 +23,7 @@ public class AVPlayerViewModule: Module {
   private var player: AVPlayer?
   private var timeObserverToken: Any?
   private var endObserver: NSObjectProtocol?
+  private var isPresenting = false
 
   public func definition() -> ModuleDefinition {
     Name("AVPlayerView")
@@ -34,11 +31,16 @@ public class AVPlayerViewModule: Module {
     Events("onProgress", "onStateChange", "onDismiss")
 
     Function("present") { (url: String, positionMs: Double) in
-      self.presentPlayer(url: url, positionMs: positionMs)
+      // 所有 UIKit 操作必须回到主线程，否则会直接闪退
+      DispatchQueue.main.async {
+        self.presentPlayer(url: url, positionMs: positionMs)
+      }
     }
 
     Function("dismiss") {
-      self.dismissPlayer(animated: true, notify: false)
+      DispatchQueue.main.async {
+        self.dismissPlayer(animated: true, notify: false)
+      }
     }
 
     Function("isPresenting") { () -> Bool in
@@ -46,7 +48,9 @@ public class AVPlayerViewModule: Module {
     }
 
     OnDestroy {
-      self.dismissPlayer(animated: false, notify: false)
+      DispatchQueue.main.async {
+        self.dismissPlayer(animated: false, notify: false)
+      }
     }
   }
 
@@ -55,9 +59,14 @@ public class AVPlayerViewModule: Module {
   private func presentPlayer(url urlString: String, positionMs: Double) {
     guard let url = URL(string: urlString) else { return }
 
-    dismissPlayer(animated: false, notify: false)
+    // 已经在呈现中就先拆掉，避免重复 present 造成崩溃
+    if isPresenting || controller != nil {
+      dismissPlayer(animated: false, notify: false)
+    }
 
     guard let host = topViewController() else { return }
+    // 宿主控制器必须已经在 window 里，否则 present 无响应
+    guard host.view.window != nil else { return }
 
     let item = AVPlayerItem(url: url)
     let newPlayer = AVPlayer(playerItem: item)
@@ -73,12 +82,15 @@ public class AVPlayerViewModule: Module {
       self?.sendEvent("onDismiss", [:])
     }
     controller = vc
-
-    host.present(vc, animated: true, completion: nil)
+    isPresenting = true
 
     if positionMs > 0 {
       let target = CMTime(value: CMTimeValue(positionMs), timescale: 1000)
       newPlayer.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    host.present(vc, animated: true) { [weak self] in
+      self?.isPresenting = false
     }
 
     newPlayer.play()
@@ -94,13 +106,19 @@ public class AVPlayerViewModule: Module {
   }
 
   private func dismissPlayer(animated: Bool, notify: Bool) {
-    guard let vc = controller else { return }
+    guard let vc = controller else {
+      cleanupPlayer()
+      return
+    }
+    controller = nil
+    isPresenting = false
     if notify {
       sendEvent("onDismiss", [:])
     }
-    vc.dismiss(animated: animated)
+    if vc.presentingViewController != nil {
+      vc.dismiss(animated: animated)
+    }
     cleanupPlayer()
-    controller = nil
   }
 
   private func cleanupPlayer() {

@@ -126,7 +126,7 @@ export class API {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status} ${url}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     return response;
@@ -335,19 +335,7 @@ export class API {
     pageStart: number = 0
   ): Promise<DoubanResponse> {
     const url = `/api/douban?type=${type}&tag=${encodeURIComponent(tag)}&pageSize=${pageSize}&pageStart=${pageStart}`;
-    let response: Response;
-    try {
-      response = await this._fetch(url);
-    } catch (e: any) {
-      // 5xx 多为服务端拉豆瓣时的瞬时失败，隔一秒重试一次
-      const statusMatch = /status: (\d{3})/.exec(e?.message || "");
-      if (statusMatch && Number(statusMatch[1]) >= 500) {
-        await new Promise((r) => setTimeout(r, 1000));
-        response = await this._fetch(url);
-      } else {
-        throw e;
-      }
-    }
+    const response = await this._fetch(url);
     const data: any = await response.json();
     if (this.isLibre()) {
       // LibreTV: {items:[{id,title,cover,rating,isTv}]}

@@ -67,9 +67,11 @@ export default function PlayScreen() {
     const url = currentEpisode?.url;
     if (!url || hasPresented) return;
     setHasPresented(true);
-    presentPlayer(url, initialPosition || 0);
+    // 等路由转场稳定再 present，避免在控制器切换过程中弹原生播放器
+    const timer = setTimeout(() => presentPlayer(url, initialPosition || 0), 300);
     // initialPosition 只在首次呈现时用一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => clearTimeout(timer);
   }, [currentEpisode?.url, hasPresented]);
 
   // 进度回传 → store（续播与播放记录）
