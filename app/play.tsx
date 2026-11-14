@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, BackHandler, View, ActivityIndicator } from "react-native";
+import { StyleSheet, BackHandler, View, ActivityIndicator, Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
 import { addPlayerListener, dismissPlayer, presentPlayer } from "@/modules/av-player-view";
@@ -44,6 +44,7 @@ export default function PlayScreen() {
   const { initialPosition, loadVideo, reset, handlePlaybackStatusUpdate } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
   const [hasPresented, setHasPresented] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>("正在解析片源…");
   const leavingRef = React.useRef(false);
 
   // 载入片源
@@ -51,7 +52,9 @@ export default function PlayScreen() {
     stopActivePlayback().catch(() => {});
     if (source && id && title) {
       loadVideo({ source, id, episodeIndex, position, title }).catch((e: any) => {
-        logger.error(`loadVideo failed: ${e?.message || e}`);
+        const msg = e?.message || String(e);
+        logger.error(`loadVideo failed: ${msg}`);
+        setStatusText(`片源解析失败：${msg}`);
       });
     }
   }, [episodeIndex, source, position, loadVideo, id, title]);
@@ -67,6 +70,7 @@ export default function PlayScreen() {
     const url = currentEpisode?.url;
     if (!url || hasPresented) return;
     setHasPresented(true);
+    setStatusText("正在启动播放器…");
     // 等路由转场稳定再 present，避免在控制器切换过程中弹原生播放器
     const timer = setTimeout(() => presentPlayer(url, initialPosition || 0), 300);
     // initialPosition 只在首次呈现时用一次
@@ -80,6 +84,7 @@ export default function PlayScreen() {
       const positionMillis = payload?.positionMillis ?? 0;
       const durationMillis = payload?.durationMillis ?? 0;
       if (!durationMillis) return;
+      setStatusText(null);
       handlePlaybackStatusUpdate({
         isLoaded: true,
         positionMillis,
@@ -93,6 +98,23 @@ export default function PlayScreen() {
     });
     return () => sub.remove();
   }, [handlePlaybackStatusUpdate]);
+
+  // 原生侧报错（片源无效 / 播放失败 / 无法呈现）
+  useEffect(() => {
+    const sub = addPlayerListener("onError", (payload: any) => {
+      setStatusText(`播放器启动失败：${payload?.message || "未知原因"}`);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // 片源迟迟不到：给出可读提示，避免一直无声转圈
+  useEffect(() => {
+    if (currentEpisode?.url) return;
+    const timer = setTimeout(() => {
+      setStatusText("片源地址为空：后台解析较慢或该资源没有可播放地址");
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [currentEpisode?.url]);
 
   // 原生播放器被系统关闭（遥控 Menu 退出）→ 记录位置并回详情页
   useEffect(() => {
@@ -140,7 +162,8 @@ export default function PlayScreen() {
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator color="#333333" size="large" />
+      <ActivityIndicator color="#ffffff" size="large" />
+      {statusText ? <Text style={styles.status}>{statusText}</Text> : null}
     </View>
   );
 }
@@ -151,5 +174,12 @@ const styles = StyleSheet.create({
     backgroundColor: "black",
     alignItems: "center",
     justifyContent: "center",
+  },
+  status: {
+    marginTop: 24,
+    color: "#cccccc",
+    fontSize: 24,
+    textAlign: "center",
+    paddingHorizontal: 40,
   },
 });

@@ -19,7 +19,7 @@ export const dismissPlayer = (): void => {
 };
 
 export const addPlayerListener = (
-  event: "onProgress" | "onStateChange" | "onDismiss",
+  event: "onProgress" | "onStateChange" | "onDismiss" | "onError",
   listener: (payload: any) => void
 ) => NativeAVPlayer.addListener(event, listener);
 

@@ -24,11 +24,13 @@ public class AVPlayerViewModule: Module {
   private var timeObserverToken: Any?
   private var endObserver: NSObjectProtocol?
   private var isPresenting = false
+  private var statusObservation: NSKeyValueObservation?
+  private var presentRetryCount = 0
 
   public func definition() -> ModuleDefinition {
     Name("AVPlayerView")
 
-    Events("onProgress", "onStateChange", "onDismiss")
+    Events("onProgress", "onStateChange", "onDismiss", "onError")
 
     Function("present") { (url: String, positionMs: Double) in
       // 所有 UIKit 操作必须回到主线程，否则会直接闪退
@@ -57,16 +59,34 @@ public class AVPlayerViewModule: Module {
   // MARK: - Present / dismiss
 
   private func presentPlayer(url urlString: String, positionMs: Double) {
-    guard let url = URL(string: urlString) else { return }
+    guard let url = URL(string: urlString) else {
+      sendEvent("onError", ["message": "片源地址无效"])
+      return
+    }
 
     // 已经在呈现中就先拆掉，避免重复 present 造成崩溃
     if isPresenting || controller != nil {
       dismissPlayer(animated: false, notify: false)
     }
 
-    guard let host = topViewController() else { return }
-    // 宿主控制器必须已经在 window 里，否则 present 无响应
-    guard host.view.window != nil else { return }
+    guard let host = topViewController() else {
+      sendEvent("onError", ["message": "找不到宿主控制器，无法全屏呈现"])
+      return
+    }
+    // 宿主控制器必须已经在 window 里，否则 present 无响应；稍等重试几次
+    if host.view.window == nil {
+      if presentRetryCount < 5 {
+        presentRetryCount += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+          self?.presentPlayer(url: urlString, positionMs: positionMs)
+        }
+      } else {
+        presentRetryCount = 0
+        sendEvent("onError", ["message": "页面尚未就绪，播放器无法呈现"])
+      }
+      return
+    }
+    presentRetryCount = 0
 
     let item = AVPlayerItem(url: url)
     let newPlayer = AVPlayer(playerItem: item)
@@ -91,6 +111,13 @@ public class AVPlayerViewModule: Module {
 
     host.present(vc, animated: true) { [weak self] in
       self?.isPresenting = false
+    }
+
+    statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+      if item.status == .failed {
+        let reason = item.error?.localizedDescription ?? "未知错误"
+        self?.sendEvent("onError", ["message": "播放失败：\(reason)"])
+      }
     }
 
     newPlayer.play()
@@ -130,6 +157,8 @@ public class AVPlayerViewModule: Module {
       NotificationCenter.default.removeObserver(endObserver)
     }
     endObserver = nil
+    statusObservation?.invalidate()
+    statusObservation = nil
     player?.pause()
     player?.replaceCurrentItem(with: nil)
     player = nil
