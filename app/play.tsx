@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, BackHandler, View, ActivityIndicator } from "react-native";
+import { StyleSheet, BackHandler, View, ActivityIndicator, Pressable, Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
 import NativeAVPlayerView from "@/modules/av-player-view";
@@ -43,7 +43,14 @@ export default function PlayScreen() {
 
   const { initialPosition, loadVideo, reset, handlePlaybackStatusUpdate } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
+  const episodes = usePlayerStore((s) => s.episodes);
+  const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
+  const playEpisode = usePlayerStore((s) => s.playEpisode);
   const [isReady, setIsReady] = useState(false);
+  const [btnFocused, setBtnFocused] = useState(false);
+
+  const hasNextEpisode =
+    currentEpisodeIndex >= 0 && episodes.length > 1 && currentEpisodeIndex < episodes.length - 1;
 
   // 载入片源：沿用原来的 loadVideo，拿到集数、当前集地址和续播位置
   useEffect(() => {
@@ -117,6 +124,23 @@ export default function PlayScreen() {
         autoPlay
         onProgress={onProgress}
       />
+      {hasNextEpisode && (
+        <View style={styles.overlay} pointerEvents="box-none">
+          <Pressable
+            hasTVPreferredFocus
+            onFocus={() => setBtnFocused(true)}
+            onBlur={() => setBtnFocused(false)}
+            onPress={() => {
+              playEpisode(currentEpisodeIndex + 1);
+            }}
+            style={[styles.nextButton, btnFocused && styles.nextButtonFocused]}
+          >
+            <Text style={[styles.nextButtonText, btnFocused && styles.nextButtonTextFocused]}>
+              播放下一集
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -125,5 +149,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "black",
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "flex-end",
+    alignItems: "flex-end",
+    padding: 60,
+  },
+  nextButton: {
+    paddingHorizontal: 40,
+    paddingVertical: 20,
+    borderRadius: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.35)",
+  },
+  nextButtonFocused: {
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    borderColor: "#ffffff",
+    transform: [{ scale: 1.08 }],
+  },
+  nextButtonText: {
+    color: "#ffffff",
+    fontSize: 28,
+    fontWeight: "600",
+  },
+  nextButtonTextFocused: {
+    color: "#111111",
   },
 });
