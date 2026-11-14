@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { StyleSheet, BackHandler, View, ActivityIndicator, Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
-import { addPlayerListener, dismissPlayer, presentPlayer } from "@/modules/av-player-view";
+import { addPlayerListener, dismissPlayer, getLog, ping, presentPlayer } from "@/modules/av-player-view";
 import useDetailStore from "@/stores/detailStore";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
 import { stopActivePlayback } from "@/utils/playbackGuard";
@@ -70,7 +70,13 @@ export default function PlayScreen() {
     const url = currentEpisode?.url;
     if (!url || hasPresented) return;
     setHasPresented(true);
-    setStatusText("正在启动播放器…");
+    setStatusText(`模块探针：${(() => {
+      try {
+        return ping();
+      } catch (e: any) {
+        return `失败 ${e?.message || e}`;
+      }
+    })()}`);
     // 等路由转场稳定再 present，避免在控制器切换过程中弹原生播放器
     const timer = setTimeout(() => {
       try {
@@ -107,20 +113,40 @@ export default function PlayScreen() {
 
   // 原生侧的呈现阶段：把卡点直接显示出来
   useEffect(() => {
-    const sub = addPlayerListener("onStateChange", (payload: any) => {
+    const sub = addPlayerListener("onStage", (payload: any) => {
       const stage = payload?.stage;
       if (!stage) return;
       const map: Record<string, string> = {
-        present_begin: "正在启动播放器…（step1 进入原生）",
-        present_host_ready: "正在启动播放器…（step2 已拿到宿主页面）",
-        present_calling: "正在启动播放器…（step3 已调用 present）",
-        present_completed: "正在启动播放器…（step4 present 回调已返回）",
-        present_failed: "原生播放器未能呈现",
+        present_begin: "（step1 进入原生）",
+        present_host_ready: "（step2 已拿到宿主页面）",
+        present_calling: "（step3 已调用 present）",
+        present_completed: "（step4 present 回调已返回）",
       };
       const text = map[stage];
-      if (text) setStatusText(text);
+      if (text) setStatusText(`正在启动播放器…${text}`);
     });
     return () => sub.remove();
+  }, []);
+
+  // 每秒读一次原生侧日志，把呈现流程逐步显示在屏幕上
+  useEffect(() => {
+    let stopped = false;
+    const timer = setInterval(() => {
+      if (stopped) return;
+      try {
+        const log = getLog();
+        if (log) {
+          const tail = log.split("\n").slice(-3).join(" · ");
+          setStatusText((prev) => (prev && prev.startsWith("播放") ? prev : `原生日志：${tail}`));
+        }
+      } catch (e: any) {
+        setStatusText(`读取原生日志失败：${e?.message || String(e)}`);
+      }
+    }, 1000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
   }, []);
 
   // 原生侧报错（片源无效 / 播放失败 / 无法呈现）

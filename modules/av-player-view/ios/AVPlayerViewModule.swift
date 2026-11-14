@@ -29,11 +29,27 @@ public class AVPlayerViewModule: Module {
   private var retryCount = 0
   private var pendingURL: String?
   private var pendingPositionMs: Double = 0
+  private var logLines: [String] = []
+
+  private func log(_ text: String) {
+    let stamp = String(format: "%.1f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 100))
+    logLines.append("[\(stamp)] \(text)")
+    if logLines.count > 40 { logLines.removeFirst(logLines.count - 40) }
+    NSLog("[OrionAV] %@", text)
+}
 
   public func definition() -> ModuleDefinition {
     Name("AVPlayerView")
 
-    Events("onProgress", "onStateChange", "onDismiss", "onError")
+    Events("onProgress", "onStateChange", "onDismiss", "onError", "onStage")
+
+    Function("ping") { () -> String in
+      return "pong"
+    }
+
+    Function("getLog") { () -> String in
+      return self.logLines.joined(separator: "\n")
+    }
 
     Function("present") { (url: String, positionMs: Double) in
       self.pendingURL = url
@@ -65,7 +81,8 @@ public class AVPlayerViewModule: Module {
   // MARK: - Present
 
   private func presentPlayer(url urlString: String, positionMs: Double) {
-    sendEvent("onStateChange", ["stage": "present_begin"])
+    log("present_begin url=\(urlString.prefix(48)) pos=\(Int(positionMs))")
+    sendEvent("onStage", ["stage": "present_begin"])
     guard let url = URL(string: urlString) else {
       sendEvent("onError", ["message": "片源地址无效"])
       return
@@ -77,9 +94,11 @@ public class AVPlayerViewModule: Module {
     }
 
     guard let host = topViewController() else {
+      log("no host controller")
       scheduleRetry(reason: "尚未找到可用的宿主控制器")
       return
     }
+    log("host=\(type(of: host)) window=\(host.view.window != nil)")
     guard host.view.window != nil else {
       scheduleRetry(reason: "宿主页面还没挂到窗口上")
       return
@@ -100,19 +119,22 @@ public class AVPlayerViewModule: Module {
     }
     controller = vc
     isPresenting = true
-    sendEvent("onStateChange", ["stage": "present_host_ready"])
+    log("host ready, will present")
+    sendEvent("onStage", ["stage": "present_host_ready"])
 
     if positionMs > 0 {
       let target = CMTime(value: CMTimeValue(positionMs), timescale: 1000)
       newPlayer.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
-    sendEvent("onStateChange", ["stage": "present_calling"])
+    log("calling present")
+    sendEvent("onStage", ["stage": "present_calling"])
     // tvOS 上带转场动画的 present 在页面转场期间容易无声失败，这里关掉动画直上
     host.present(vc, animated: false) { [weak self, weak vc] in
       guard let self = self else { return }
       self.isPresenting = false
-      self.sendEvent("onStateChange", ["stage": "present_completed"])
+      self.log("present completion presented=\(vc?.presentingViewController != nil)")
+      self.sendEvent("onStage", ["stage": "present_completed"])
       // 呈现没生效时给出明确原因，别让用户只看到转圈
       if vc?.presentingViewController == nil {
         self.sendEvent("onError", ["message": "原生播放器未能呈现（present 未生效）"])
@@ -141,8 +163,10 @@ public class AVPlayerViewModule: Module {
   }
 
   private func scheduleRetry(reason: String) {
+    log("retry #\(retryCount) reason=\(reason)")
     guard retryCount < 10 else {
       retryCount = 0
+      log("retry exhausted: \(reason)")
       sendEvent("onError", ["message": "画面没能起来：\(reason)"])
       return
     }
