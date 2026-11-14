@@ -1,0 +1,7 @@
+{
+  "name": "av-player-view",
+  "version": "1.0.0",
+  "description": "Native AVPlayerViewController view for OrionTV",
+  "main": "index.ts",
+  "private": true
+}
