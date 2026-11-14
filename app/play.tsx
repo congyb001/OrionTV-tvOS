@@ -72,7 +72,13 @@ export default function PlayScreen() {
     setHasPresented(true);
     setStatusText("正在启动播放器…");
     // 等路由转场稳定再 present，避免在控制器切换过程中弹原生播放器
-    const timer = setTimeout(() => presentPlayer(url, initialPosition || 0), 300);
+    const timer = setTimeout(() => {
+      try {
+        presentPlayer(url, initialPosition || 0);
+      } catch (e: any) {
+        setStatusText(`调用原生播放器失败：${e?.message || String(e)}`);
+      }
+    }, 300);
     // initialPosition 只在首次呈现时用一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => clearTimeout(timer);
@@ -98,6 +104,24 @@ export default function PlayScreen() {
     });
     return () => sub.remove();
   }, [handlePlaybackStatusUpdate]);
+
+  // 原生侧的呈现阶段：把卡点直接显示出来
+  useEffect(() => {
+    const sub = addPlayerListener("onStateChange", (payload: any) => {
+      const stage = payload?.stage;
+      if (!stage) return;
+      const map: Record<string, string> = {
+        present_begin: "正在启动播放器…（step1 进入原生）",
+        present_host_ready: "正在启动播放器…（step2 已拿到宿主页面）",
+        present_calling: "正在启动播放器…（step3 已调用 present）",
+        present_completed: "正在启动播放器…（step4 present 回调已返回）",
+        present_failed: "原生播放器未能呈现",
+      };
+      const text = map[stage];
+      if (text) setStatusText(text);
+    });
+    return () => sub.remove();
+  }, []);
 
   // 原生侧报错（片源无效 / 播放失败 / 无法呈现）
   useEffect(() => {

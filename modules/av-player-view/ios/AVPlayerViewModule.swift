@@ -65,6 +65,7 @@ public class AVPlayerViewModule: Module {
   // MARK: - Present
 
   private func presentPlayer(url urlString: String, positionMs: Double) {
+    sendEvent("onStateChange", ["stage": "present_begin"])
     guard let url = URL(string: urlString) else {
       sendEvent("onError", ["message": "片源地址无效"])
       return
@@ -99,15 +100,19 @@ public class AVPlayerViewModule: Module {
     }
     controller = vc
     isPresenting = true
+    sendEvent("onStateChange", ["stage": "present_host_ready"])
 
     if positionMs > 0 {
       let target = CMTime(value: CMTimeValue(positionMs), timescale: 1000)
       newPlayer.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
-    host.present(vc, animated: true) { [weak self, weak vc] in
+    sendEvent("onStateChange", ["stage": "present_calling"])
+    // tvOS 上带转场动画的 present 在页面转场期间容易无声失败，这里关掉动画直上
+    host.present(vc, animated: false) { [weak self, weak vc] in
       guard let self = self else { return }
       self.isPresenting = false
+      self.sendEvent("onStateChange", ["stage": "present_completed"])
       // 呈现没生效时给出明确原因，别让用户只看到转圈
       if vc?.presentingViewController == nil {
         self.sendEvent("onError", ["message": "原生播放器未能呈现（present 未生效）"])
